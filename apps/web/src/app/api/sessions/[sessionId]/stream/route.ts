@@ -1,0 +1,83 @@
+import { failure } from "../../../_lib/http";
+import {
+    buildConnectedEvent,
+    getSessionById,
+    getSessionSnapshot,
+    subscribeToSession,
+} from "../../../_lib/state";
+import type { SSEEvent } from "@spire/types";
+
+type RouteContext = {
+    params: { sessionId: string } | Promise<{ sessionId: string }>;
+};
+
+function encodeSSEData(event: SSEEvent) {
+    return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+}
+
+export async function GET(_request: Request, context: RouteContext) {
+    const { sessionId } = await Promise.resolve(context.params);
+    const session = getSessionById(sessionId);
+
+    if (!session) {
+        return failure("not_found", "Session was not found.", 404);
+    }
+
+    let unsubscribe: (() => void) | null = null;
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
+
+    const cleanup = () => {
+        if (heartbeat) {
+            clearInterval(heartbeat);
+            heartbeat = null;
+        }
+
+        if (unsubscribe) {
+            unsubscribe();
+            unsubscribe = null;
+        }
+    };
+
+    const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+            const encoder = new TextEncoder();
+            controller.enqueue(encoder.encode(encodeSSEData(buildConnectedEvent(sessionId))));
+
+            const snapshot = getSessionSnapshot(sessionId);
+            if (snapshot) {
+                controller.enqueue(
+                    encoder.encode(
+                        encodeSSEData({
+                            type: "snapshot",
+                            payload: snapshot,
+                        })
+                    )
+                );
+            }
+
+            unsubscribe = subscribeToSession(sessionId, (event) => {
+                controller.enqueue(encoder.encode(encodeSSEData(event)));
+            });
+
+            heartbeat = setInterval(() => {
+                controller.enqueue(encoder.encode(`: keepalive ${Date.now()}\n\n`));
+            }, 15000);
+
+            if (session.status !== "active") {
+                cleanup();
+                controller.close();
+            }
+        },
+        cancel() {
+            cleanup();
+        },
+    });
+
+    return new Response(stream, {
+        headers: {
+            "content-type": "text/event-stream",
+            "cache-control": "no-cache, no-transform",
+            connection: "keep-alive",
+        },
+    });
+}

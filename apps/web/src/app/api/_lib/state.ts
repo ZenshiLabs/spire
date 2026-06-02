@@ -2,6 +2,8 @@ import {
     type CreateSessionInput,
     type DeltaPayload,
     type DeviceCodeResponse,
+    type FileSnapshot,
+    type SSEEvent,
     type SessionResponse,
     type TokenResponse,
 } from "@spire/types";
@@ -36,10 +38,16 @@ type DeltaResult =
     | { ok: true }
     | { ok: false; code: "not_found" | "forbidden" | "inactive_session" };
 
+type SnapshotResult =
+    | { ok: true }
+    | { ok: false; code: "not_found" | "forbidden" | "inactive_session" };
+
 const deviceAuthStore = new Map<string, DeviceAuthRecord>();
 const tokenStore = new Map<string, AccessTokenRecord>();
 const sessionStore = new Map<string, SessionResponse>();
 const deltaStore = new Map<string, DeltaPayload[]>();
+const snapshotStore = new Map<string, FileSnapshot>();
+const sessionSubscribers = new Map<string, Set<(event: SSEEvent) => void>>();
 
 function nowMs() {
     return Date.now();
@@ -63,6 +71,17 @@ function makeUserCode() {
 
 function makeJoinCode() {
     return randomBytes(4).toString("hex").toUpperCase();
+}
+
+function emitSessionEvent(sessionId: string, event: SSEEvent) {
+    const listeners = sessionSubscribers.get(sessionId);
+    if (!listeners || listeners.size === 0) {
+        return;
+    }
+
+    for (const listener of listeners) {
+        listener(event);
+    }
 }
 
 export function issueDeviceCode(input: { clientId: string; scope: string }): DeviceCodeResponse {
@@ -175,6 +194,51 @@ export function createSession(instructorId: string, input: CreateSessionInput): 
     return session;
 }
 
+export function getSessionById(sessionId: string) {
+    return sessionStore.get(sessionId) ?? null;
+}
+
+export function listSessionsForInstructor(instructorId: string) {
+    return [...sessionStore.values()]
+        .filter((session) => session.instructorId === instructorId)
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export function getSessionDeltas(sessionId: string) {
+    return deltaStore.get(sessionId) ?? [];
+}
+
+export function getSessionSnapshot(sessionId: string) {
+    return snapshotStore.get(sessionId) ?? null;
+}
+
+export function subscribeToSession(sessionId: string, listener: (event: SSEEvent) => void) {
+    const existing = sessionSubscribers.get(sessionId) ?? new Set<(event: SSEEvent) => void>();
+    existing.add(listener);
+    sessionSubscribers.set(sessionId, existing);
+
+    return () => {
+        const listeners = sessionSubscribers.get(sessionId);
+        if (!listeners) {
+            return;
+        }
+
+        listeners.delete(listener);
+
+        if (listeners.size === 0) {
+            sessionSubscribers.delete(sessionId);
+        }
+    };
+}
+
+export function buildConnectedEvent(sessionId: string): SSEEvent {
+    return {
+        type: "connected",
+        sessionId,
+        timestamp: nowMs(),
+    };
+}
+
 export function endSession(sessionId: string, instructorId: string): EndSessionResult {
     const session = sessionStore.get(sessionId);
     if (!session) {
@@ -197,7 +261,44 @@ export function endSession(sessionId: string, instructorId: string): EndSessionR
     };
 
     sessionStore.set(sessionId, updated);
+    emitSessionEvent(sessionId, {
+        type: "session_ended",
+        sessionId,
+        timestamp: nowMs(),
+    });
+
     return { ok: true, session: updated };
+}
+
+export function ingestSnapshot(instructorId: string, payload: FileSnapshot): SnapshotResult {
+    const session = sessionStore.get(payload.sessionId);
+
+    if (!session) {
+        return { ok: false, code: "not_found" };
+    }
+
+    if (session.instructorId !== instructorId) {
+        return { ok: false, code: "forbidden" };
+    }
+
+    if (session.status !== "active") {
+        return { ok: false, code: "inactive_session" };
+    }
+
+    snapshotStore.set(payload.sessionId, payload);
+
+    const updatedSession: SessionResponse = {
+        ...session,
+        updatedAt: nowIso(),
+    };
+    sessionStore.set(payload.sessionId, updatedSession);
+
+    emitSessionEvent(payload.sessionId, {
+        type: "snapshot",
+        payload,
+    });
+
+    return { ok: true };
 }
 
 export function ingestDelta(instructorId: string, payload: DeltaPayload): DeltaResult {
@@ -224,6 +325,10 @@ export function ingestDelta(instructorId: string, payload: DeltaPayload): DeltaR
         updatedAt: nowIso(),
     };
     sessionStore.set(payload.sessionId, updatedSession);
+    emitSessionEvent(payload.sessionId, {
+        type: "delta",
+        payload,
+    });
 
     return { ok: true };
 }

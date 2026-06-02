@@ -10,6 +10,7 @@ import { readValidToken } from "../auth/token-store.js";
 import { buildUnifiedDiff } from "../diff/diff-engine.js";
 import { validateDeltaPayload } from "../diff/payload-validator.js";
 import { clearActiveSession, writeActiveSession } from "../session/local-session.js";
+import { buildFileSnapshot } from "../snapshot/build-snapshot.js";
 import { FsWatcher } from "../watcher/fs-watcher.js";
 import { createPathFilter } from "../watcher/gitignore-filter.js";
 import { buildInitialHashes, HashRegistry } from "../watcher/hash-registry.js";
@@ -37,6 +38,16 @@ export async function runStartCommand(options: StartOptions) {
     const session = await client.createSession(createSessionInput, token.accessToken);
 
     const pathFilter = await createPathFilter(options.rootDir);
+
+    const snapshotSpinner = spinner();
+    snapshotSpinner.start("Building and uploading initial snapshot...");
+    const snapshot = await buildFileSnapshot(
+        session.id,
+        options.rootDir,
+        (absolutePath) => pathFilter.accepts(absolutePath)
+    );
+    await client.uploadSnapshot(token.accessToken, session.id, snapshot);
+    snapshotSpinner.stop("Initial snapshot uploaded.");
 
     const setupSpinner = spinner();
     setupSpinner.start("Building initial file hash registry...");

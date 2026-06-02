@@ -3,6 +3,7 @@ import {
     type CreateSessionInput,
     DeltaPayloadSchema,
     DeviceCodeResponseSchema,
+    FileSnapshotSchema,
     SessionResponseSchema,
     TokenResponseSchema,
 } from "@spire/types";
@@ -71,6 +72,11 @@ export class SpireApiClient {
     async pushDelta(accessToken: string, payload: unknown) {
         const parsed = DeltaPayloadSchema.parse(payload);
         await this.request("POST", "/api/delta", parsed, accessToken);
+    }
+
+    async uploadSnapshot(accessToken: string, sessionId: string, payload: unknown) {
+        const parsed = FileSnapshotSchema.parse(payload);
+        await this.request("POST", `/api/sessions/${sessionId}/snapshot`, parsed, accessToken);
     }
 
     private async request(

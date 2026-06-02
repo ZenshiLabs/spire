@@ -1,9 +1,20 @@
 import { failure } from "../../_lib/http";
-import { authorize, endSession } from "../../_lib/state";
+import { authorize, endSession, getSessionById } from "../../_lib/state";
 
 type RouteContext = {
     params: { sessionId: string } | Promise<{ sessionId: string }>;
 };
+
+export async function GET(_request: Request, context: RouteContext) {
+    const { sessionId } = await Promise.resolve(context.params);
+    const session = getSessionById(sessionId);
+
+    if (!session) {
+        return failure("not_found", "Session was not found.", 404);
+    }
+
+    return Response.json({ ok: true, data: session });
+}
 
 export async function DELETE(request: Request, context: RouteContext) {
     const auth = authorize(request.headers.get("authorization"));
