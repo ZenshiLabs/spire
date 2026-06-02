@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@spire/auth": "workspace:*",
+    "@spire/types": "workspace:*",
     "@clack/prompts": "^0.9.1",
     "diff": "^5.2.0",
     "ignore": "^7.0.5"
@@ -21,6 +22,7 @@
   "devDependencies": {
     "@spire/eslint-config": "workspace:*",
     "@spire/typescript-config": "workspace:*",
+    "@types/diff": "^7.0.1",
     "@types/node": "^22.15.3",
     "eslint": "^9.39.1",
     "tsup": "^8.5.0",

@@ -26,6 +26,9 @@ importers:
       '@spire/auth':
         specifier: workspace:*
         version: link:../../packages/auth
+      '@spire/types':
+        specifier: workspace:*
+        version: link:../../packages/types
       diff:
         specifier: ^5.2.0
         version: 5.2.2
@@ -39,6 +42,9 @@ importers:
       '@spire/typescript-config':
         specifier: workspace:*
         version: link:../../packages/typescript-config
+      '@types/diff':
+        specifier: ^7.0.1
+        version: 7.0.2
       '@types/node':
         specifier: ^22.15.3
         version: 22.15.3
@@ -1036,6 +1042,9 @@ packages:
     resolution: {integrity: sha512-Y7SJppD0Z8wjO3Ec0ZGd9KQ4Yv0BMnA8CIowj5Vp+OEVsosXDG2weK6/t1RRLfJmc2Ozrnd6y4DOgQys+mn3WQ==}
     cpu: [arm64]
     os: [win32]
+
+  '@types/diff@7.0.2':
+    resolution: {integrity: sha512-JSWRMozjFKsGlEjiiKajUjIJVKuKdE3oVy2DNtK+fUo8q82nhFZ2CPQwicAIkXrofahDXrWJ7mjelvZphMS98Q==}
 
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
@@ -2820,6 +2829,8 @@ snapshots:
 
   '@turbo/windows-arm64@2.9.16':
     optional: true
+
+  '@types/diff@7.0.2': {}
 
   '@types/estree@1.0.8': {}
 

@@ -1,10 +1,17 @@
 #!/usr/bin/env node
 import { cancel, intro, isCancel, log, outro, select } from "@clack/prompts";
-import { buildSignInUrl, getClerkAuthConfig } from "@spire/auth";
+import path from "node:path";
 
-type CliCommand = "status" | "login";
+import { getApiBaseUrl } from "./config.js";
+import { runLoginCommand } from "./commands/login.js";
+import { runStartCommand } from "./commands/start.js";
+import { runStatusCommand } from "./commands/status.js";
+import { runStopCommand } from "./commands/stop.js";
+
+type CliCommand = "status" | "login" | "start" | "stop";
 type RuntimeProcess = {
     argv: string[];
+    cwd: () => string;
     exit: (code?: number) => never;
 };
 
@@ -21,7 +28,12 @@ function getRuntimeProcess(): RuntimeProcess {
 function getArgCommand(argv: string[]): CliCommand | null {
     const command = argv[2];
 
-    if (command === "status" || command === "login") {
+    if (
+        command === "status" ||
+        command === "login" ||
+        command === "start" ||
+        command === "stop"
+    ) {
         return command;
     }
 
@@ -32,8 +44,10 @@ async function promptForCommand(): Promise<CliCommand | null> {
     const selected = await select({
         message: "What do you want to do?",
         options: [
-            { value: "status", label: "status", hint: "Show CLI scaffold status" },
-            { value: "login", label: "login", hint: "Show Clerk sign-in URL" },
+            { value: "status", label: "status", hint: "Show auth/session state" },
+            { value: "login", label: "login", hint: "Run device authorization flow" },
+            { value: "start", label: "start", hint: "Start session and watch files" },
+            { value: "stop", label: "stop", hint: "Stop active session" },
         ],
     });
 
@@ -44,26 +58,46 @@ async function promptForCommand(): Promise<CliCommand | null> {
     return selected;
 }
 
-function runStatusCommand() {
-    log.info("Spire CLI scaffold is ready.");
+type CliOptions = {
+    title?: string;
+    rootDir: string;
 }
 
-function runLoginCommand() {
-    const config = getClerkAuthConfig();
-    const signInUrl = buildSignInUrl();
+function parseOptions(argv: string[], runtimeProcess: RuntimeProcess): CliOptions {
+    let title: string | undefined;
+    let rootDir = runtimeProcess.cwd();
 
-    if (!config.publishableKey && !config.secretKey) {
-        log.warn("Clerk is not configured. Set NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY.");
+    for (let index = 3; index < argv.length; index += 1) {
+        const arg = argv[index];
+
+        if (arg === "--title") {
+            title = argv[index + 1];
+            index += 1;
+            continue;
+        }
+
+        if (arg === "--dir") {
+            const dir = argv[index + 1];
+            if (dir) {
+                rootDir = path.resolve(runtimeProcess.cwd(), dir);
+            }
+            index += 1;
+        }
     }
 
-    log.message(`Open this URL to sign in: ${signInUrl}`);
+    return {
+        title,
+        rootDir,
+    };
 }
 
 async function main() {
     intro("Spire CLI");
     const runtimeProcess = getRuntimeProcess();
+    const apiBaseUrl = getApiBaseUrl();
 
     const command = getArgCommand(runtimeProcess.argv) ?? (await promptForCommand());
+    const options = parseOptions(runtimeProcess.argv, runtimeProcess);
 
     if (!command) {
         cancel("Cancelled.");
@@ -71,11 +105,23 @@ async function main() {
     }
 
     if (command === "status") {
-        runStatusCommand();
+        await runStatusCommand();
     }
 
     if (command === "login") {
-        runLoginCommand();
+        await runLoginCommand(apiBaseUrl);
+    }
+
+    if (command === "start") {
+        await runStartCommand({
+            apiBaseUrl,
+            rootDir: options.rootDir,
+            title: options.title,
+        });
+    }
+
+    if (command === "stop") {
+        await runStopCommand(apiBaseUrl);
     }
 
     outro("Done");
