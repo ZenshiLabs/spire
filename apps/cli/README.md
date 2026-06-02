@@ -18,6 +18,8 @@ Node.js CLI for Spire instructor sessions.
 - `spire status`
 - `spire stop`
 
+Commands are auto-discovered from `src/commands/*.ts`. Add a new command file that exports a default `CommandModule` and it will appear in both argv parsing and the interactive prompt without manual registration.
+
 ## End-to-End Flow
 
 ```mermaid
@@ -66,7 +68,9 @@ flowchart TD
 ## Runtime Modules
 
 - `src/index.ts`: command dispatch and prompt UX.
-- `src/commands/*`: `login`, `start`, `status`, `stop` orchestration.
+- `src/commands/handler.ts`: central command registry, option parsing, and dispatch.
+- `src/commands/types.ts`: command module contract.
+- `src/commands/*`: command modules auto-loaded by the handler.
 - `src/auth/device-flow.ts`: polling-based device auth flow.
 - `src/auth/token-store.ts`: token persistence and expiry checks.
 - `src/api/client.ts`: typed HTTP client for auth/session/delta APIs.

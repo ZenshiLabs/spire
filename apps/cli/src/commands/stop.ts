@@ -3,6 +3,7 @@ import { log } from "@clack/prompts";
 import { SpireApiClient } from "../api/client.js";
 import { readValidToken } from "../auth/token-store.js";
 import { clearActiveSession, readActiveSession } from "../session/local-session.js";
+import type { CommandModule } from "./types.js";
 
 export async function runStopCommand(apiBaseUrl: string) {
     const activeSession = await readActiveSession();
@@ -23,3 +24,13 @@ export async function runStopCommand(apiBaseUrl: string) {
 
     log.success(`Session ${activeSession.sessionId} ended.`);
 }
+
+const command: CommandModule = {
+    name: "stop",
+    hint: "Stop active session",
+    run: async ({ apiBaseUrl }) => {
+        await runStopCommand(apiBaseUrl);
+    },
+};
+
+export default command;

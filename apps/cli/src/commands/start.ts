@@ -13,6 +13,7 @@ import { clearActiveSession, writeActiveSession } from "../session/local-session
 import { FsWatcher } from "../watcher/fs-watcher.js";
 import { createPathFilter } from "../watcher/gitignore-filter.js";
 import { buildInitialHashes, HashRegistry } from "../watcher/hash-registry.js";
+import type { CommandModule } from "./types.js";
 
 export type StartOptions = {
     apiBaseUrl: string;
@@ -145,3 +146,17 @@ export async function runStartCommand(options: StartOptions) {
 
     log.success(`Session ${session.id} stopped.`);
 }
+
+const command: CommandModule = {
+    name: "start",
+    hint: "Start session and watch files",
+    run: async ({ apiBaseUrl, options }) => {
+        await runStartCommand({
+            apiBaseUrl,
+            rootDir: options.rootDir,
+            title: options.title,
+        });
+    },
+};
+
+export default command;

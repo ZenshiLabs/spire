@@ -2,6 +2,7 @@ import { log } from "@clack/prompts";
 
 import { readStoredToken } from "../auth/token-store.js";
 import { readActiveSession } from "../session/local-session.js";
+import type { CommandModule } from "./types.js";
 
 export async function runStatusCommand() {
     const token = await readStoredToken();
@@ -25,3 +26,13 @@ export async function runStatusCommand() {
     log.info(`Deltas synced: ${activeSession.deltasSynced}`);
     log.info(`Started at: ${activeSession.startedAt}`);
 }
+
+const command: CommandModule = {
+    name: "status",
+    hint: "Show auth/session state",
+    run: async () => {
+        await runStatusCommand();
+    },
+};
+
+export default command;
