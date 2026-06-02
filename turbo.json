@@ -5,7 +5,24 @@
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": [".next/**", "!.next/cache/**"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+    },
+    "@spire/types#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "@spire/stores#build": {
+      "dependsOn": ["@spire/types#build"],
+      "outputs": ["dist/**"]
+    },
+    "@spire/auth#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "@spire/cli#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"],
+      "env": ["API_BASE_URL", "SPIRE_API_URL"]
     },
     "lint": {
       "dependsOn": ["^lint"]
@@ -16,6 +33,15 @@
     "dev": {
       "cache": false,
       "persistent": true
+    },
+    "web#dev": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": [
+        "@spire/types#build",
+        "@spire/stores#build",
+        "@spire/auth#build"
+      ]
     }
   }
 }

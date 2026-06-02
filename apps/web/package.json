@@ -11,14 +11,18 @@
     "check-types": "next typegen && tsc --noEmit"
   },
   "dependencies": {
-    "@repo/ui": "workspace:*",
+    "@clerk/nextjs": "^6.22.0",
+    "@spire/auth": "workspace:*",
+    "@spire/stores": "workspace:*",
+    "@spire/types": "workspace:*",
+    "@spire/ui": "workspace:*",
     "next": "16.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
-    "@repo/eslint-config": "workspace:*",
-    "@repo/typescript-config": "workspace:*",
+    "@spire/eslint-config": "workspace:*",
+    "@spire/typescript-config": "workspace:*",
     "@types/node": "^22.15.3",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",

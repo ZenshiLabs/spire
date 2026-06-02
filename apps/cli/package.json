@@ -1,0 +1,33 @@
+{
+  "name": "@spire/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "spire": "./dist/index.cjs"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsup src/index.ts --format cjs --target node18 --dts --outDir dist",
+    "lint": "eslint . --max-warnings 0",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@spire/auth": "workspace:*",
+    "@clack/prompts": "^0.9.1",
+    "diff": "^5.2.0",
+    "ignore": "^7.0.5"
+  },
+  "devDependencies": {
+    "@spire/eslint-config": "workspace:*",
+    "@spire/typescript-config": "workspace:*",
+    "@types/node": "^22.15.3",
+    "eslint": "^9.39.1",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.6",
+    "typescript": "5.9.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
