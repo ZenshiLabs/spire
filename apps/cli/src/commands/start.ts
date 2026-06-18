@@ -29,7 +29,112 @@ export type StartOptions = {
     rootDir: string;
     title?: string;
     session?: string;
+    /**
+     * Injectable dependencies for testing. In production all fields are
+     * omitted and the real implementations are used.
+     */
+    _deps?: StartDeps;
 };
+
+export type StartDeps = {
+    /** Override the API client constructor — inject an in-memory stub in tests. */
+    createClient?: (baseUrl: string) => SpireApiClient;
+    /** Override the snapshot builder — inject an in-memory version in tests. */
+    buildSnapshot?: typeof buildFileSnapshot;
+};
+
+export type BuildEntryDeps = {
+    rootResolved: string;
+    pathFilter: { accepts: (absolutePath: string) => boolean };
+    hashes: HashRegistry;
+};
+
+/**
+ * Converts a single file-watcher event into a checkpoint manifest entry. The
+ * CLI sends only the new content and its SHA-256 hash; the server resolves the
+ * prior version and computes diff stats. No file content is retained in memory
+ * between checkpoints — only the per-file hash for change detection.
+ *
+ * Accepting explicit deps rather than closing over them makes this function
+ * testable in isolation without a running watcher or real filesystem state.
+ */
+export async function buildEntry(
+    absolutePath: string,
+    kind: ChangeKind,
+    deps: BuildEntryDeps
+): Promise<CheckpointManifestEntry | null> {
+    const { rootResolved, pathFilter, hashes } = deps;
+    const relativePath = toPosixPath(path.relative(rootResolved, absolutePath));
+
+    if (kind === "deleted") {
+        if (!hashes.get(absolutePath)) {
+            /**
+             * File was never tracked by the hash registry. This can happen when a
+             * newly-created file is immediately deleted before the snapshot or a
+             * previous checkpoint recorded it.
+             */
+            return null;
+        }
+        hashes.remove(absolutePath);
+        return { path: relativePath, changeType: "deleted", hash: null, size: 0 };
+    }
+
+    if (!pathFilter.accepts(absolutePath)) {
+        return null;
+    }
+
+    const stats = await stat(absolutePath).catch(() => null);
+    if (!stats || !stats.isFile()) {
+        /**
+         * The file vanished between the watcher event and the stat call. If it was
+         * previously tracked, treat this as a deletion so the viewer stays in sync.
+         */
+        if (!hashes.get(absolutePath)) {
+            return null;
+        }
+        hashes.remove(absolutePath);
+        return { path: relativePath, changeType: "deleted", hash: null, size: 0 };
+    }
+
+    if (stats.size > MAX_FILE_BYTES) {
+        log.warn(
+            `Skipped ${relativePath}: exceeds ${Math.round(MAX_FILE_BYTES / 1024 / 1024)}MB limit.`
+        );
+        return null;
+    }
+
+    const buffer = await readFile(absolutePath);
+    const changeType = kind === "added" ? "added" : "modified";
+
+    if (isBinaryContent(buffer)) {
+        const hash = HashRegistry.fromBuffer(buffer);
+        if (!hashes.hasChanged(absolutePath, hash)) {
+            return null;
+        }
+        hashes.set(absolutePath, hash);
+        return {
+            path: relativePath,
+            changeType,
+            hash,
+            size: buffer.byteLength,
+            binary: true,
+        };
+    }
+
+    const content = buffer.toString("utf8");
+    const hash = HashRegistry.fromContent(content);
+    if (!hashes.hasChanged(absolutePath, hash)) {
+        return null;
+    }
+    hashes.set(absolutePath, hash);
+    return {
+        path: relativePath,
+        changeType,
+        hash,
+        size: buffer.byteLength,
+        content,
+    };
+}
 
 /**
  * Generates a URL-safe 8-character base36 session ID (e.g. "k3f9zq2a").
@@ -54,7 +159,9 @@ export async function runStartCommand(options: StartOptions) {
         options.title?.trim() || saved?.title || `Session ${new Date().toISOString()}`;
     const rootResolved = path.resolve(options.rootDir);
 
-    const client = new SpireApiClient(options.apiBaseUrl);
+    const createClient = options._deps?.createClient ?? ((url) => new SpireApiClient(url));
+    const doSnapshot = options._deps?.buildSnapshot ?? buildFileSnapshot;
+    const client = createClient(options.apiBaseUrl);
     const sessionInput: CreateSessionInput = { title };
     const session = await client.ensureSession(sessionId, sessionInput);
 
@@ -66,7 +173,7 @@ export async function runStartCommand(options: StartOptions) {
             ? "Rejoining session and re-uploading snapshot from local files..."
             : "Building and uploading initial snapshot..."
     );
-    const snapshot = await buildFileSnapshot(session.id, options.rootDir, (absolutePath) =>
+    const snapshot = await doSnapshot(session.id, options.rootDir, (absolutePath) =>
         pathFilter.accepts(absolutePath)
     );
     await client.uploadSnapshot(session.id, snapshot);
@@ -113,87 +220,7 @@ export async function runStartCommand(options: StartOptions) {
     log.info(`Share this URL with viewers: ${shareUrl}`);
     log.info("Watching for changes. Press Ctrl+C to stop.");
 
-    /**
-     * Converts a single file-watcher event into a checkpoint manifest entry. The
-     * CLI sends only the new content and its SHA-256 hash; the server resolves the
-     * prior version and computes diff stats. No file content is retained in memory
-     * between checkpoints — only the per-file hash for change detection.
-     */
-    const buildEntry = async (
-        absolutePath: string,
-        kind: ChangeKind
-    ): Promise<CheckpointManifestEntry | null> => {
-        const relativePath = toPosixPath(path.relative(rootResolved, absolutePath));
-
-        if (kind === "deleted") {
-            if (!hashes.get(absolutePath)) {
-                /**
-                 * File was never tracked by the hash registry. This can happen when a
-                 * newly-created file is immediately deleted before the snapshot or a
-                 * previous checkpoint recorded it.
-                 */
-                return null;
-            }
-            hashes.remove(absolutePath);
-            return { path: relativePath, changeType: "deleted", hash: null, size: 0 };
-        }
-
-        if (!pathFilter.accepts(absolutePath)) {
-            return null;
-        }
-
-        const stats = await stat(absolutePath).catch(() => null);
-        if (!stats || !stats.isFile()) {
-            /**
-             * The file vanished between the watcher event and the stat call. If it was
-             * previously tracked, treat this as a deletion so the viewer stays in sync.
-             */
-            if (!hashes.get(absolutePath)) {
-                return null;
-            }
-            hashes.remove(absolutePath);
-            return { path: relativePath, changeType: "deleted", hash: null, size: 0 };
-        }
-
-        if (stats.size > MAX_FILE_BYTES) {
-            log.warn(
-                `Skipped ${relativePath}: exceeds ${Math.round(MAX_FILE_BYTES / 1024 / 1024)}MB limit.`
-            );
-            return null;
-        }
-
-        const buffer = await readFile(absolutePath);
-        const changeType = kind === "added" ? "added" : "modified";
-
-        if (isBinaryContent(buffer)) {
-            const hash = HashRegistry.fromBuffer(buffer);
-            if (!hashes.hasChanged(absolutePath, hash)) {
-                return null;
-            }
-            hashes.set(absolutePath, hash);
-            return {
-                path: relativePath,
-                changeType,
-                hash,
-                size: buffer.byteLength,
-                binary: true,
-            };
-        }
-
-        const content = buffer.toString("utf8");
-        const hash = HashRegistry.fromContent(content);
-        if (!hashes.hasChanged(absolutePath, hash)) {
-            return null;
-        }
-        hashes.set(absolutePath, hash);
-        return {
-            path: relativePath,
-            changeType,
-            hash,
-            size: buffer.byteLength,
-            content,
-        };
-    };
+    const entryDeps: BuildEntryDeps = { rootResolved, pathFilter, hashes };
 
     const batcher = new CheckpointBatcher({
         idleMs: 400,
@@ -202,7 +229,7 @@ export async function runStartCommand(options: StartOptions) {
             const entries: CheckpointManifestEntry[] = [];
             for (const [absolutePath, kind] of changes) {
                 try {
-                    const entry = await buildEntry(absolutePath, kind);
+                    const entry = await buildEntry(absolutePath, kind, entryDeps);
                     if (entry) {
                         entries.push(entry);
                     }
