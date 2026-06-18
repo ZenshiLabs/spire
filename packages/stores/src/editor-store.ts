@@ -1,64 +1,41 @@
 import { create } from "zustand";
-import { produce } from "immer";
 
+/**
+ * Manages open editor tabs and the currently active file path. File content is
+ * intentionally absent from this store — it lives in the web app's content-
+ * addressed LRU cache so memory stays bounded regardless of how many files are
+ * opened or how long a session runs.
+ */
 interface EditorState {
+    tabs: string[];
     activeFilePath: string | null;
-    openFiles: string[];
-    fileContents: Record<string, string>; // path → content
-    // actions
-    openFile: (path: string, content: string) => void;
+    openFile: (path: string) => void;
     closeFile: (path: string) => void;
-    setFileContent: (path: string, content: string) => void;
-    applyDelta: (path: string, newContent: string) => void;
-    setActiveFile: (path: string | null) => void;
+    setActiveFile: (path: string) => void;
     clearAll: () => void;
 }
 
 export const useEditorStore = create<EditorState>((set) => ({
+    tabs: [],
     activeFilePath: null,
-    openFiles: [],
-    fileContents: {},
 
-    openFile: (path, content) =>
-        set(produce((state: EditorState) => {
-            if (!state.openFiles.includes(path)) {
-                state.openFiles.push(path);
-            }
-            state.fileContents[path] = content;
-            state.activeFilePath = path;
+    openFile: (path) =>
+        set((state) => ({
+            tabs: state.tabs.includes(path) ? state.tabs : [...state.tabs, path],
+            activeFilePath: path,
         })),
 
     closeFile: (path) =>
-        set(produce((state: EditorState) => {
-            state.openFiles = state.openFiles.filter((p) => p !== path);
-            delete state.fileContents[path];
-            if (state.activeFilePath === path) {
-                state.activeFilePath = state.openFiles[state.openFiles.length - 1] ?? null;
-            }
-        })),
+        set((state) => {
+            const tabs = state.tabs.filter((p) => p !== path);
+            const activeFilePath =
+                state.activeFilePath === path
+                    ? tabs[tabs.length - 1] ?? null
+                    : state.activeFilePath;
+            return { tabs, activeFilePath };
+        }),
 
-    setFileContent: (path, content) =>
-        set(produce((state: EditorState) => {
-            state.fileContents[path] = content;
-        })),
+    setActiveFile: (path) => set({ activeFilePath: path }),
 
-    applyDelta: (path, newContent) =>
-        set(produce((state: EditorState) => {
-            state.fileContents[path] = newContent;
-            if (!state.openFiles.includes(path)) {
-                state.openFiles.push(path);
-            }
-        })),
-
-    setActiveFile: (path) =>
-        set(produce((state: EditorState) => {
-            state.activeFilePath = path;
-        })),
-
-    clearAll: () =>
-        set(produce((state: EditorState) => {
-            state.activeFilePath = null;
-            state.openFiles = [];
-            state.fileContents = {};
-        })),
+    clearAll: () => set({ tabs: [], activeFilePath: null }),
 }));
