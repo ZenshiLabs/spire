@@ -1,9 +1,5 @@
 import { failure, success } from "../../../_lib/http";
-import {
-    getSessionById,
-    getSessionDeltas,
-    getSessionSnapshot,
-} from "../../../_lib/state";
+import { buildSessionState } from "../../../_lib/state";
 
 type RouteContext = {
     params: { sessionId: string } | Promise<{ sessionId: string }>;
@@ -11,15 +7,11 @@ type RouteContext = {
 
 export async function GET(_request: Request, context: RouteContext) {
     const { sessionId } = await Promise.resolve(context.params);
-    const session = getSessionById(sessionId);
+    const state = await buildSessionState(sessionId);
 
-    if (!session) {
+    if (!state) {
         return failure("not_found", "Session was not found.", 404);
     }
 
-    return success({
-        session,
-        snapshot: getSessionSnapshot(sessionId),
-        deltas: getSessionDeltas(sessionId),
-    });
+    return success(state);
 }

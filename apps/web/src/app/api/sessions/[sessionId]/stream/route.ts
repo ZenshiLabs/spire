@@ -2,7 +2,6 @@ import { failure } from "../../../_lib/http";
 import {
     buildConnectedEvent,
     getSessionById,
-    getSessionSnapshot,
     subscribeToSession,
 } from "../../../_lib/state";
 import type { SSEEvent } from "@spire/types";
@@ -17,7 +16,7 @@ function encodeSSEData(event: SSEEvent) {
 
 export async function GET(_request: Request, context: RouteContext) {
     const { sessionId } = await Promise.resolve(context.params);
-    const session = getSessionById(sessionId);
+    const session = await getSessionById(sessionId);
 
     if (!session) {
         return failure("not_found", "Session was not found.", 404);
@@ -43,18 +42,11 @@ export async function GET(_request: Request, context: RouteContext) {
             const encoder = new TextEncoder();
             controller.enqueue(encoder.encode(encodeSSEData(buildConnectedEvent(sessionId))));
 
-            const snapshot = getSessionSnapshot(sessionId);
-            if (snapshot) {
-                controller.enqueue(
-                    encoder.encode(
-                        encodeSSEData({
-                            type: "snapshot",
-                            payload: snapshot,
-                        })
-                    )
-                );
-            }
-
+            /**
+             * The initial snapshot, content, and checkpoint history are served by the
+             * sibling `/state` endpoint. This stream carries only live events emitted
+             * after the viewer has already loaded that initial payload.
+             */
             unsubscribe = subscribeToSession(sessionId, (event) => {
                 controller.enqueue(encoder.encode(encodeSSEData(event)));
             });
