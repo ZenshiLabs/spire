@@ -91,3 +91,5 @@ sequenceDiagram
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `DATABASE_URL` | Yes | Neon/Postgres connection string |
+| `SPIRE_EAGER_MAX_BYTES` | No | Max total session size for eager mode (default: 1.5 MB) |
+| `SPIRE_EAGER_MAX_FILES` | No | Max file count for eager mode (default: 400) |

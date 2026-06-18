@@ -77,7 +77,7 @@ The session ID is stored in `~/.spire/sessions.json` keyed by directory. Re-runn
 |---------|-------------|
 | `apps/web` | Next.js 16 — landing page, session viewer UI, REST + SSE API |
 | `apps/cli` | Node.js CLI (`@spire/cli`) — file watcher, snapshot, checkpoint batching |
-| `packages/types` | Zod schemas and TypeScript types shared across the monorepo |
+| `packages/types` | Zod schemas, TypeScript types, and file-identity utilities (`HASH_RE`, `isValidHash`, `baseName`) shared across the monorepo |
 | `packages/stores` | Zustand stores for the web viewer (file tree, history, editor, theme) |
 | `packages/db` | Drizzle ORM schema and typed queries (Neon/Postgres) |
 | `packages/eslint-config` | Shared ESLint flat configs |
@@ -109,5 +109,5 @@ pnpm lint         # lint all workspaces
 
 - **No authentication** — the session ID is the credential. Spire is intentionally ephemeral.
 - **Content-addressed storage** — file content is stored as SHA-256 blobs, deduplicated per session. Re-saving a file to a prior state costs nothing.
-- **Eager / lazy mode** — sessions under ~1.5 MB / 400 files ship all content up front for instant opens; larger sessions serve content per-file on demand.
+- **Eager / lazy mode** — sessions under ~1.5 MB / 400 files ship all content up front for instant opens; larger sessions serve content per-file on demand. Thresholds are tunable via `SPIRE_EAGER_MAX_BYTES` and `SPIRE_EAGER_MAX_FILES` env vars on the web server.
 - **In-process pub/sub** — live events are fanned out in-memory; no external message broker is required.
