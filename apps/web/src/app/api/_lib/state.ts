@@ -20,6 +20,7 @@ import {
     type HeadUpdate,
 } from "@spire/db";
 import {
+    baseName,
     type ChangeType,
     type Checkpoint,
     type CheckpointChange,
@@ -45,9 +46,14 @@ type IngestResult =
  * content is shipped in the initial `/state` payload so viewers open files
  * instantly. Larger sessions switch to "lazy" mode and fetch content per-file
  * on demand to keep the initial payload size and server memory usage bounded.
+ *
+ * Override via SPIRE_EAGER_MAX_BYTES / SPIRE_EAGER_MAX_FILES env vars without
+ * redeploying, e.g. to tune thresholds in staging.
  */
-const EAGER_MAX_BYTES = 1.5 * 1024 * 1024;
-const EAGER_MAX_FILES = 400;
+const EAGER_MAX_BYTES =
+    Number(process.env.SPIRE_EAGER_MAX_BYTES) || 1.5 * 1024 * 1024;
+const EAGER_MAX_FILES =
+    Number(process.env.SPIRE_EAGER_MAX_FILES) || 400;
 
 /**
  * Session state is persisted in Postgres via @spire/db. The pub/sub mechanism
@@ -127,11 +133,6 @@ function countDiff(before: string, after: string): { add: number; del: number } 
     return { add, del };
 }
 
-function baseName(path: string): string {
-    const parts = path.split("/");
-    return parts[parts.length - 1] ?? path;
-}
-
 const VERB: Record<ChangeType, string> = {
     added: "Added",
     modified: "Updated",
@@ -146,11 +147,6 @@ function buildLabel(changes: CheckpointChange[]): string {
     return changes.length === 1
         ? `${verb} ${name}`
         : `${verb} ${name} +${changes.length - 1} more`;
-}
-
-async function blobLineCount(sessionId: string, hash: string): Promise<number> {
-    const blob = await dbGetBlob(sessionId, hash);
-    return blob && !blob.binary ? countLines(blob.content) : 0;
 }
 
 /**
@@ -267,6 +263,113 @@ function emitCheckpoint(sessionId: string, checkpoint: Checkpoint) {
     emitSessionEvent(sessionId, { type: "checkpoint", payload: checkpoint });
 }
 
+export type CheckpointChangeCalculation = {
+    changes: CheckpointChange[];
+    headUpserts: HeadUpdate[];
+    headDeletes: string[];
+    newBlobs: Map<string, BlobInput>;
+    additions: number;
+    deletions: number;
+};
+
+/**
+ * Pure calculation step for a checkpoint upload. Resolves prior file heads and
+ * blob content through the provided reader seams so the function can be tested
+ * with in-memory adapters without a live database.
+ *
+ * Two adapters justify the seam: the real DB readers in production, and
+ * in-memory maps in tests.
+ */
+export async function calculateCheckpointChanges(
+    entries: CheckpointUpload["entries"],
+    readHead: (path: string) => Promise<{ hash: string; binary: boolean } | null>,
+    readBlob: (hash: string) => Promise<{ content: string; binary: boolean } | null>
+): Promise<CheckpointChangeCalculation> {
+    const changes: CheckpointChange[] = [];
+    const headUpserts: HeadUpdate[] = [];
+    const headDeletes: string[] = [];
+    const newBlobs = new Map<string, BlobInput>();
+    let additions = 0;
+    let deletions = 0;
+
+    for (const entry of entries) {
+        if (entry.changeType === "deleted") {
+            const prior = await readHead(entry.path);
+            const beforeHash = prior?.hash ?? null;
+            let del = 0;
+            if (prior && !prior.binary && beforeHash) {
+                const blob = await readBlob(beforeHash);
+                del = blob && !blob.binary ? countLines(blob.content) : 0;
+            }
+            deletions += del;
+            headDeletes.push(entry.path);
+            changes.push({
+                path: entry.path,
+                changeType: "deleted",
+                beforeHash,
+                afterHash: null,
+                additions: 0,
+                deletions: del,
+                binary: prior?.binary || undefined,
+            });
+            continue;
+        }
+
+        const afterHash = entry.hash;
+        if (!afterHash) {
+            continue;
+        }
+
+        const prior = await readHead(entry.path);
+        const beforeHash = prior?.hash ?? null;
+        if (prior && prior.hash === afterHash) {
+            continue;
+        }
+
+        if (!newBlobs.has(afterHash)) {
+            newBlobs.set(afterHash, {
+                hash: afterHash,
+                content: entry.binary ? "" : entry.content ?? "",
+                size: entry.size,
+                binary: Boolean(entry.binary),
+            });
+        }
+
+        const changeType: ChangeType = prior ? "modified" : "added";
+        let add = 0;
+        let del = 0;
+        if (!entry.binary) {
+            const after = entry.content ?? "";
+            if (!prior) {
+                add = countLines(after);
+            } else {
+                const before = beforeHash ? await readBlob(beforeHash) : null;
+                ({ add, del } = countDiff(before?.content ?? "", after));
+            }
+        }
+        additions += add;
+        deletions += del;
+        headUpserts.push({
+            path: entry.path,
+            hash: afterHash,
+            size: entry.size,
+            binary: Boolean(entry.binary),
+        });
+        changes.push({
+            path: entry.path,
+            changeType,
+            oldPath: entry.oldPath,
+            beforeHash,
+            afterHash,
+            additions: add,
+            deletions: del,
+            binary: entry.binary || undefined,
+        });
+    }
+
+    return { changes, headUpserts, headDeletes, newBlobs, additions, deletions };
+}
+
 /**
  * Ingests a full file tree from the CLI. Stores all file content as
  * content-addressed blobs and saves a metadata-only snapshot tree, then writes
@@ -361,7 +464,11 @@ export async function ingestSnapshot(payload: FileSnapshot): Promise<IngestResul
 
     for (const prior of priorHead) {
         if (!incomingPaths.has(prior.path)) {
-            const del = prior.binary ? 0 : await blobLineCount(sessionId, prior.hash);
+            let del = 0;
+            if (!prior.binary) {
+                const blob = await dbGetBlob(sessionId, prior.hash);
+                del = blob && !blob.binary ? countLines(blob.content) : 0;
+            }
             deletions += del;
             headDeletes.push(prior.path);
             changes.push({
@@ -447,86 +554,12 @@ export async function ingestCheckpoint(payload: CheckpointUpload): Promise<Inges
     const sessionId = payload.sessionId;
     const now = new Date(payload.timestamp);
 
-    const changes: CheckpointChange[] = [];
-    const headUpserts: HeadUpdate[] = [];
-    const headDeletes: string[] = [];
-    const newBlobs = new Map<string, BlobInput>();
-    let additions = 0;
-    let deletions = 0;
-
-    for (const entry of payload.entries) {
-        if (entry.changeType === "deleted") {
-            const prior = await dbGetFileHead(sessionId, entry.path);
-            const beforeHash = prior?.hash ?? null;
-            const del =
-                prior && !prior.binary && beforeHash
-                    ? await blobLineCount(sessionId, beforeHash)
-                    : 0;
-            deletions += del;
-            headDeletes.push(entry.path);
-            changes.push({
-                path: entry.path,
-                changeType: "deleted",
-                beforeHash,
-                afterHash: null,
-                additions: 0,
-                deletions: del,
-                binary: prior?.binary || undefined,
-            });
-            continue;
-        }
-
-        const afterHash = entry.hash;
-        if (!afterHash) {
-            continue;
-        }
-
-        const prior = await dbGetFileHead(sessionId, entry.path);
-        const beforeHash = prior?.hash ?? null;
-        if (prior && prior.hash === afterHash) {
-            continue;
-        }
-
-        if (!newBlobs.has(afterHash)) {
-            newBlobs.set(afterHash, {
-                hash: afterHash,
-                content: entry.binary ? "" : entry.content ?? "",
-                size: entry.size,
-                binary: Boolean(entry.binary),
-            });
-        }
-
-        const changeType: ChangeType = prior ? "modified" : "added";
-        let add = 0;
-        let del = 0;
-        if (!entry.binary) {
-            const after = entry.content ?? "";
-            if (!prior) {
-                add = countLines(after);
-            } else {
-                const before = beforeHash ? await dbGetBlob(sessionId, beforeHash) : null;
-                ({ add, del } = countDiff(before?.content ?? "", after));
-            }
-        }
-        additions += add;
-        deletions += del;
-        headUpserts.push({
-            path: entry.path,
-            hash: afterHash,
-            size: entry.size,
-            binary: Boolean(entry.binary),
-        });
-        changes.push({
-            path: entry.path,
-            changeType,
-            oldPath: entry.oldPath,
-            beforeHash,
-            afterHash,
-            additions: add,
-            deletions: del,
-            binary: entry.binary || undefined,
-        });
-    }
+    const { changes, headUpserts, headDeletes, newBlobs, additions, deletions } =
+        await calculateCheckpointChanges(
+            payload.entries,
+            (path) => dbGetFileHead(sessionId, path),
+            (hash) => dbGetBlob(sessionId, hash)
+        );
 
     if (changes.length === 0) {
         return { ok: true };
