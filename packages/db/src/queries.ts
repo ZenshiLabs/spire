@@ -7,6 +7,7 @@ import type {
     FileSnapshot,
     SessionResponse,
 } from "@spire/types";
+import { HASH_RE } from "@spire/types";
 import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 
 import { getDb } from "./client.js";
@@ -22,8 +23,6 @@ import {
     type FileRow,
     type SessionRow,
 } from "./schema.js";
-
-const HASH_RE = /^[0-9a-f]{64}$/i;
 
 function toSessionResponse(row: SessionRow): SessionResponse {
     return {

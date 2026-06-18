@@ -2,10 +2,7 @@ import type { FileNode } from "@spire/types";
 
 export type FlatNode = { node: FileNode; depth: number };
 
-export function baseName(path: string): string {
-    const parts = path.split("/");
-    return parts[parts.length - 1] ?? path;
-}
+export { baseName } from "@spire/types";
 
 function compareNodes(a: FileNode, b: FileNode): number {
     if (a.type !== b.type) {

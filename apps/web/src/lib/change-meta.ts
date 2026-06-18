@@ -31,10 +31,7 @@ export const CHANGE_META: Record<
     },
 };
 
-export function baseName(path: string): string {
-    const parts = path.split("/");
-    return parts[parts.length - 1] ?? path;
-}
+export { baseName } from "@spire/types";
 
 export function dirName(path: string): string {
     const parts = path.split("/");

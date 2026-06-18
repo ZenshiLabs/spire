@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { baseName } from "@spire/types";
 
 /**
  * Trimmed material-icon-theme manifest, fetched once from
@@ -59,11 +60,6 @@ export function useIconManifest(): IconManifest | null {
         () => manifest,
         () => null
     );
-}
-
-function baseName(path: string): string {
-    const parts = path.split("/");
-    return parts[parts.length - 1] || path;
 }
 
 /** Resolve a file name/path to a material icon name (longest extension wins). */

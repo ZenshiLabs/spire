@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { isValidHash } from "@spire/types";
 
 import { contentCache } from "./content-cache";
 import { fetchFileContent } from "./session-api";
-
-const HASH_RE = /^[0-9a-f]{64}$/i;
 
 export type FileContentState = {
     content: string | null;
@@ -33,7 +32,7 @@ export function useFileContent(
 ): FileContentState {
     const binaryHint = Boolean(options.binary);
     const cached =
-        ref && HASH_RE.test(ref) ? contentCache.get(ref) : undefined;
+        ref && isValidHash(ref) ? contentCache.get(ref) : undefined;
 
     const [state, setState] = useState<FileContentState>(() => {
         if (!path || !ref) {
@@ -57,7 +56,7 @@ export function useFileContent(
             setState({ content: "", binary: true, loading: false, error: null });
             return;
         }
-        const hit = HASH_RE.test(ref) ? contentCache.get(ref) : undefined;
+        const hit = isValidHash(ref) ? contentCache.get(ref) : undefined;
         if (hit !== undefined) {
             setState({ content: hit, binary: false, loading: false, error: null });
             return;
@@ -112,7 +111,7 @@ export function prefetchFileContent(
     path: string,
     ref: string
 ): void {
-    if (HASH_RE.test(ref) && contentCache.has(ref)) {
+    if (isValidHash(ref) && contentCache.has(ref)) {
         return;
     }
     void fetchFileContent(sessionId, path, ref)
