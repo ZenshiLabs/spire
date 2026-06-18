@@ -1,76 +1,58 @@
-import { watch, type FSWatcher } from "node:fs";
-import { stat } from "node:fs/promises";
+import chokidar, { type FSWatcher } from "chokidar";
 import path from "node:path";
 
-type ChangeHandler = (absolutePath: string) => Promise<void>;
+export type WatchEventKind = "added" | "modified" | "deleted";
 
 type WatcherOptions = {
     rootDir: string;
-    debounceMs?: number;
+    /** Returns true to ignore a path (and, for directories, skip recursing into it). */
+    ignored: (absolutePath: string) => boolean;
+    onEvent: (absolutePath: string, kind: WatchEventKind) => void;
     onError?: (error: unknown) => void;
 };
 
-export class FsWatcher {
+/**
+ * Cross-platform recursive file watcher built on chokidar. `awaitWriteFinish`
+ * coalesces rapid partial writes and prevents reading a half-written file during
+ * a save. Grouping of related changes into checkpoint batches is handled
+ * separately by the CheckpointBatcher, which runs above this layer.
+ */
+export class FileWatcher {
     private watcher: FSWatcher | null = null;
-    private readonly timers = new Map<string, NodeJS.Timeout>();
 
-    constructor(
-        private readonly options: WatcherOptions,
-        private readonly onChange: ChangeHandler
-    ) { }
+    constructor(private readonly options: WatcherOptions) {}
 
     start() {
         if (this.watcher) {
             return;
         }
 
-        const debounceMs = this.options.debounceMs ?? 300;
-
-        this.watcher = watch(this.options.rootDir, { recursive: true }, (eventType, filename) => {
-            if (!filename) {
-                return;
-            }
-
-            const name = filename.toString();
-            const absolutePath = path.join(this.options.rootDir, name);
-            const key = `${eventType}:${absolutePath}`;
-            const existingTimer = this.timers.get(key);
-
-            if (existingTimer) {
-                clearTimeout(existingTimer);
-            }
-
-            const timer = setTimeout(async () => {
-                try {
-                    const fileStat = await stat(absolutePath);
-                    if (!fileStat.isFile()) {
-                        return;
-                    }
-                } catch {
-                    // File deleted or unavailable; let the consumer decide if this matters.
-                }
-
-                try {
-                    await this.onChange(absolutePath);
-                } catch (error: unknown) {
-                    this.options.onError?.(error);
-                } finally {
-                    this.timers.delete(key);
-                }
-            }, debounceMs);
-
-            this.timers.set(key, timer);
+        this.watcher = chokidar.watch(this.options.rootDir, {
+            ignored: (candidate: string) =>
+                this.options.ignored(path.resolve(candidate)),
+            ignoreInitial: true,
+            persistent: true,
+            awaitWriteFinish: {
+                stabilityThreshold: 120,
+                pollInterval: 40,
+            },
         });
+
+        this.watcher.on("add", (p) =>
+            this.options.onEvent(path.resolve(p), "added")
+        );
+        this.watcher.on("change", (p) =>
+            this.options.onEvent(path.resolve(p), "modified")
+        );
+        this.watcher.on("unlink", (p) =>
+            this.options.onEvent(path.resolve(p), "deleted")
+        );
+        this.watcher.on("error", (error) => this.options.onError?.(error));
     }
 
-    stop() {
-        for (const timer of this.timers.values()) {
-            clearTimeout(timer);
-        }
-        this.timers.clear();
-
+    async stop() {
         if (this.watcher) {
-            this.watcher.close();
+            await this.watcher.close();
             this.watcher = null;
         }
     }

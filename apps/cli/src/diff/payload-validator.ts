@@ -1,11 +1,20 @@
 import path from "node:path";
 
-import { DeltaPayloadSchema, type DeltaPayload } from "@spire/types";
+import { CheckpointUploadSchema, type CheckpointUpload } from "@spire/types";
 
-const MAX_DELTA_BYTES = 50 * 1024 * 1024;
+/**
+ * Per-file content size ceiling applied to checkpoint entry payloads sent over
+ * the wire. The initial snapshot builder already excludes files above
+ * MAX_FILE_BYTES at the watcher level; this serves as an independent backstop
+ * specifically for checkpoint entries to guard against a file growing past the
+ * limit between the snapshot and a subsequent save.
+ */
+const MAX_ENTRY_BYTES = 5 * 1024 * 1024;
 
-export function validateDeltaPayload(payload: DeltaPayload): { ok: true } | { ok: false; reason: string } {
-    const parsed = DeltaPayloadSchema.safeParse(payload);
+export function validateCheckpointUpload(
+    payload: CheckpointUpload
+): { ok: true } | { ok: false; reason: string } {
+    const parsed = CheckpointUploadSchema.safeParse(payload);
     if (!parsed.success) {
         return {
             ok: false,
@@ -15,14 +24,20 @@ export function validateDeltaPayload(payload: DeltaPayload): { ok: true } | { ok
         };
     }
 
-    const normalizedPath = path.posix.normalize(payload.filePath);
-    if (normalizedPath.startsWith("../") || normalizedPath.includes("/../")) {
-        return { ok: false, reason: "Path traversal is not allowed." };
-    }
-
-    const payloadSize = Buffer.byteLength(payload.unifiedDiff, "utf8");
-    if (payloadSize > MAX_DELTA_BYTES) {
-        return { ok: false, reason: "Delta payload exceeds 50MB limit." };
+    for (const entry of payload.entries) {
+        const normalized = path.posix.normalize(entry.path);
+        if (normalized.startsWith("../") || normalized.includes("/../")) {
+            return {
+                ok: false,
+                reason: `Path traversal is not allowed: ${entry.path}`,
+            };
+        }
+        if (entry.content && Buffer.byteLength(entry.content, "utf8") > MAX_ENTRY_BYTES) {
+            return {
+                ok: false,
+                reason: `Entry ${entry.path} exceeds the 5MB content limit.`,
+            };
+        }
     }
 
     return { ok: true };

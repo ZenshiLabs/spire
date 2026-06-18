@@ -1,57 +1,28 @@
 import {
     ApiResponseSchema,
+    type CheckpointUpload,
+    CheckpointUploadSchema,
     type CreateSessionInput,
-    DeltaPayloadSchema,
-    DeviceCodeResponseSchema,
     FileSnapshotSchema,
     SessionResponseSchema,
-    TokenResponseSchema,
 } from "@spire/types";
 
 const SessionApiResponseSchema = ApiResponseSchema(SessionResponseSchema);
-const DeviceCodeApiResponseSchema = ApiResponseSchema(DeviceCodeResponseSchema);
-const TokenApiResponseSchema = ApiResponseSchema(TokenResponseSchema);
 
-type HttpMethod = "GET" | "POST" | "DELETE";
+type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
 
 export class SpireApiClient {
-    constructor(private readonly baseUrl: string) { }
+    constructor(private readonly baseUrl: string) {}
 
-    async requestDeviceCode(clientId: string, scope: string) {
-        const data = await this.request("POST", "/api/auth/device", {
-            clientId,
-            scope,
-        });
-
-        const wrapped = DeviceCodeApiResponseSchema.safeParse(data);
-        if (wrapped.success) {
-            if (!wrapped.data.ok) {
-                throw new Error(wrapped.data.error.message);
-            }
-
-            return wrapped.data.data;
-        }
-
-        return DeviceCodeResponseSchema.parse(data);
-    }
-
-    async requestDeviceToken(deviceCode: string) {
-        const data = await this.request("POST", "/api/auth/token", { deviceCode });
-
-        const wrapped = TokenApiResponseSchema.safeParse(data);
-        if (wrapped.success) {
-            if (!wrapped.data.ok) {
-                throw new Error(wrapped.data.error.message);
-            }
-
-            return wrapped.data.data;
-        }
-
-        return TokenResponseSchema.parse(data);
-    }
-
-    async createSession(input: CreateSessionInput, accessToken: string) {
-        const data = await this.request("POST", "/api/sessions", input, accessToken);
+    /**
+     * Creates the session if it does not exist, or reactivates an ended one.
+     * Idempotent — re-running the CLI for the same ID yields a live session
+     * without wiping history or resetting the share URL. The server may return
+     * either an envelope `{ ok, data }` or a bare SessionResponse; both shapes
+     * are handled here for forward compatibility.
+     */
+    async ensureSession(sessionId: string, input: CreateSessionInput) {
+        const data = await this.request("PUT", `/api/sessions/${sessionId}`, input);
         const wrapped = SessionApiResponseSchema.safeParse(data);
 
         if (wrapped.success) {
@@ -65,31 +36,35 @@ export class SpireApiClient {
         return SessionResponseSchema.parse(data);
     }
 
-    async endSession(sessionId: string, accessToken: string) {
-        await this.request("DELETE", `/api/sessions/${sessionId}`, undefined, accessToken);
+    async endSession(sessionId: string) {
+        await this.request("DELETE", `/api/sessions/${sessionId}`);
     }
 
-    async pushDelta(accessToken: string, payload: unknown) {
-        const parsed = DeltaPayloadSchema.parse(payload);
-        await this.request("POST", "/api/delta", parsed, accessToken);
+    /**
+     * Validates and uploads a save-burst checkpoint — a batch of file changes
+     * produced by the CheckpointBatcher after an idle or max-wait interval fires.
+     * The schema is validated client-side before the network call to surface
+     * structural errors without a round-trip.
+     */
+    async pushCheckpoint(sessionId: string, payload: CheckpointUpload) {
+        const parsed = CheckpointUploadSchema.parse(payload);
+        await this.request("POST", `/api/sessions/${sessionId}/checkpoint`, parsed);
     }
 
-    async uploadSnapshot(accessToken: string, sessionId: string, payload: unknown) {
+    async uploadSnapshot(sessionId: string, payload: unknown) {
         const parsed = FileSnapshotSchema.parse(payload);
-        await this.request("POST", `/api/sessions/${sessionId}/snapshot`, parsed, accessToken);
+        await this.request("POST", `/api/sessions/${sessionId}/snapshot`, parsed);
     }
 
     private async request(
         method: HttpMethod,
         route: string,
-        body?: unknown,
-        accessToken?: string
+        body?: unknown
     ): Promise<unknown> {
         const response = await fetch(`${this.baseUrl}${route}`, {
             method,
             headers: {
                 "content-type": "application/json",
-                ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
             },
             body: body ? JSON.stringify(body) : undefined,
         });

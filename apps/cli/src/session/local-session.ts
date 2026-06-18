@@ -1,30 +1,50 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 
-import { getActiveSessionPath, getSpireDataDir } from "../config.js";
+import { getSessionsRegistryPath, getSpireDataDir } from "../config.js";
 
-export type ActiveSessionState = {
+export type SessionRecord = {
     sessionId: string;
     title: string;
     rootDir: string;
     startedAt: string;
     apiBaseUrl: string;
-    deltasSynced: number;
+    checkpointsSynced: number;
 };
 
-export async function readActiveSession(): Promise<ActiveSessionState | null> {
+type SessionRegistry = Record<string, SessionRecord>;
+
+function normalizeDir(rootDir: string): string {
+    return path.resolve(rootDir);
+}
+
+async function readRegistry(): Promise<SessionRegistry> {
     try {
-        const content = await readFile(getActiveSessionPath(), "utf8");
-        return JSON.parse(content) as ActiveSessionState;
+        const content = await readFile(getSessionsRegistryPath(), "utf8");
+        return JSON.parse(content) as SessionRegistry;
     } catch {
-        return null;
+        return {};
     }
 }
 
-export async function writeActiveSession(state: ActiveSessionState): Promise<void> {
+async function writeRegistry(registry: SessionRegistry): Promise<void> {
     await mkdir(getSpireDataDir(), { recursive: true });
-    await writeFile(getActiveSessionPath(), JSON.stringify(state, null, 2), "utf8");
+    await writeFile(getSessionsRegistryPath(), JSON.stringify(registry, null, 2), "utf8");
 }
 
-export async function clearActiveSession(): Promise<void> {
-    await rm(getActiveSessionPath(), { force: true });
+/**
+ * Reads the session previously broadcast from this directory. This is what
+ * makes a directory's share URL sticky across CLI restarts: re-running
+ * `spire start` in the same folder resumes the same session ID rather than
+ * creating a new one, so the share URL never changes for a given project.
+ */
+export async function readSessionForDir(rootDir: string): Promise<SessionRecord | null> {
+    const registry = await readRegistry();
+    return registry[normalizeDir(rootDir)] ?? null;
+}
+
+export async function writeSessionForDir(record: SessionRecord): Promise<void> {
+    const registry = await readRegistry();
+    registry[normalizeDir(record.rootDir)] = record;
+    await writeRegistry(registry);
 }
