@@ -1,3 +1,3 @@
-# `@turbo/eslint-config`
+# `@spire/eslint-config`
 
-Collection of internal eslint configurations.
+Shared ESLint flat configs for all packages and apps in the Spire monorepo.

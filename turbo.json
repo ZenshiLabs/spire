@@ -1,6 +1,7 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "ui": "tui",
+  "globalEnv": ["DATABASE_URL"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -15,8 +16,8 @@
       "dependsOn": ["@spire/types#build"],
       "outputs": ["dist/**"]
     },
-    "@spire/auth#build": {
-      "dependsOn": ["^build"],
+    "@spire/db#build": {
+      "dependsOn": ["@spire/types#build"],
       "outputs": ["dist/**"]
     },
     "@spire/cli#build": {
@@ -30,17 +31,13 @@
     "check-types": {
       "dependsOn": ["^check-types"]
     },
-    "dev": {
-      "cache": false,
-      "persistent": true
-    },
     "web#dev": {
       "cache": false,
       "persistent": true,
       "dependsOn": [
         "@spire/types#build",
         "@spire/stores#build",
-        "@spire/auth#build"
+        "@spire/db#build"
       ]
     }
   }

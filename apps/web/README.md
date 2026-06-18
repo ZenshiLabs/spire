@@ -1,36 +1,93 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/create-next-app).
+# apps/web
 
-## Getting Started
+Next.js 16 application serving the Spire landing page, session viewer UI, and the REST + SSE API consumed by both the CLI broadcaster and browser viewers.
 
-First, run the development server:
+## Architecture
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```mermaid
+flowchart TB
+    subgraph pages["Pages (App Router)"]
+        HOME["/ — landing + session join form"]
+        SESSION["/session/[sessionId] — viewer"]
+    end
+
+    subgraph api["API Routes"]
+        direction LR
+        R1["PUT    /api/sessions/:id\ncreate or reactivate"]
+        R2["DELETE /api/sessions/:id\nend session"]
+        R3["POST   /api/sessions/:id/snapshot\ningest full tree"]
+        R4["POST   /api/sessions/:id/checkpoint\ningest save burst"]
+        R5["GET    /api/sessions/:id/state\ninitial viewer payload"]
+        R6["GET    /api/sessions/:id/stream\nSSE live events"]
+        R7["GET    /api/sessions/:id/file\nlazy content fetch"]
+        R8["GET    /api/sessions/:id/checkpoints\nhistory list"]
+        R9["GET    /api/sessions/:id/checkpoints/:seq\nsingle checkpoint"]
+    end
+
+    subgraph lib["State Layer (app/api/_lib/)"]
+        STATE_MOD["state.ts\nsession · snapshot · checkpoint logic\nin-process SSE fan-out"]
+        HTTP_MOD["http.ts\ntyped response helpers"]
+    end
+
+    subgraph viewer["Viewer (Client Components)"]
+        STREAM["useSessionStream\nhydrate stores + subscribe to SSE"]
+        STORES["Zustand stores\nsession · file-tree · history · editor · theme"]
+        MONACO["Monaco Editor\n+ Shiki syntax highlighting"]
+        TREE["Virtualized file tree\nwith context menus"]
+        TIMELINE["Checkpoint timeline\n+ inline Monaco diffs"]
+    end
+
+    DB[(Postgres\nvia @spire/db)]
+
+    R1 & R2 & R3 & R4 & R5 & R6 & R7 & R8 & R9 --> STATE_MOD
+    STATE_MOD --> DB
+    SESSION --> STREAM
+    STREAM --> STORES
+    STORES --> MONACO & TREE & TIMELINE
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Viewer Data Flow
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```mermaid
+sequenceDiagram
+    participant Hook as useSessionStream
+    participant State as /api/.../state
+    participant SSE as /api/.../stream
+    participant Stores as Zustand Stores
+    participant Cache as ContentCache (LRU)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load Inter, a custom Google Font.
+    Hook->>State: fetch initial payload
+    State-->>Hook: session + snapshot + checkpoints + contents?
+    Hook->>Stores: hydrate all stores
+    Hook->>Cache: prefill (eager mode only)
+    Hook->>SSE: EventSource subscribe
 
-## Learn More
+    loop Live updates
+        SSE-->>Hook: checkpoint event
+        Hook->>Stores: applyChanges + addLive
+        SSE-->>Hook: snapshot event
+        Hook->>Stores: setTree
+    end
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Key Files
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Path | Description |
+|------|-------------|
+| `src/app/api/_lib/state.ts` | Core session/snapshot/checkpoint business logic + SSE pub/sub |
+| `src/app/api/_lib/http.ts` | `success` / `failure` / `readJsonBody` response helpers |
+| `src/app/session/[sessionId]/session-viewer.tsx` | Top-level viewer layout (panels, status bar, quick-open) |
+| `src/app/session/[sessionId]/file-tree.tsx` | Virtualized file tree with context menus |
+| `src/app/session/[sessionId]/code-viewer.tsx` | Monaco tabs, diff mode, breadcrumbs |
+| `src/app/session/[sessionId]/history-panel.tsx` | Checkpoint timeline with inline Monaco diffs |
+| `src/components/monaco-viewer.tsx` | Monaco viewer and diff-viewer wrappers |
+| `src/lib/use-session-stream.ts` | Store hydration + SSE subscription hook |
+| `src/lib/use-file-content.ts` | Cache-first file content hook with hover prefetch |
+| `src/lib/content-cache.ts` | Content-addressed LRU cache (~120 entries / ~12 MB) |
+| `src/lib/session-api.ts` | Typed fetch helpers for all viewer-side API calls |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Environment Variables
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DATABASE_URL` | Yes | Neon/Postgres connection string |
