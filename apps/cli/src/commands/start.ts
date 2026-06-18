@@ -1,171 +1,305 @@
 import { log, spinner } from "@clack/prompts";
-import { lstat, readFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
-import { type CreateSessionInput } from "@spire/types";
+import {
+    type CheckpointManifestEntry,
+    type CheckpointUpload,
+    type CreateSessionInput,
+} from "@spire/types";
 
 import { SpireApiClient } from "../api/client.js";
-import { toPosixPath } from "../config.js";
-import { readValidToken } from "../auth/token-store.js";
-import { buildUnifiedDiff } from "../diff/diff-engine.js";
-import { validateDeltaPayload } from "../diff/payload-validator.js";
-import { clearActiveSession, writeActiveSession } from "../session/local-session.js";
+import { MAX_FILE_BYTES, toPosixPath } from "../config.js";
+import { validateCheckpointUpload } from "../diff/payload-validator.js";
+import { readSessionForDir, writeSessionForDir } from "../session/local-session.js";
 import { buildFileSnapshot } from "../snapshot/build-snapshot.js";
-import { FsWatcher } from "../watcher/fs-watcher.js";
-import { createPathFilter } from "../watcher/gitignore-filter.js";
-import { buildInitialHashes, HashRegistry } from "../watcher/hash-registry.js";
+import { isBinaryContent } from "../watcher/binary.js";
+import {
+    CheckpointBatcher,
+    type ChangeKind,
+} from "../watcher/checkpoint-batcher.js";
+import { FileWatcher } from "../watcher/fs-watcher.js";
+import { createPathFilter, isStubDir } from "../watcher/gitignore-filter.js";
+import { hashRegistryFromSnapshot, HashRegistry } from "../watcher/hash-registry.js";
 import type { CommandModule } from "./types.js";
 
 export type StartOptions = {
     apiBaseUrl: string;
     rootDir: string;
     title?: string;
+    session?: string;
 };
 
-export async function runStartCommand(options: StartOptions) {
-    const token = await readValidToken();
-    if (!token) {
-        throw new Error("Missing or expired login token. Run: spire login");
-    }
+/**
+ * Generates a URL-safe 8-character base36 session ID (e.g. "k3f9zq2a").
+ * Uses `crypto.randomBytes` so each run produces a cryptographically unpredictable
+ * token suitable for use as a shareable but unguessable session identifier.
+ */
+function generateSessionId(): string {
+    return Array.from(randomBytes(8))
+        .map((byte) => (byte % 36).toString(36))
+        .join("");
+}
 
-    const title = options.title?.trim() || `Session ${new Date().toISOString()}`;
-    const createSessionInput: CreateSessionInput = {
-        title,
-        maxViewers: 50,
-    };
+function errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
+
+export async function runStartCommand(options: StartOptions) {
+    const saved = await readSessionForDir(options.rootDir);
+    const rejoined = !options.session && saved !== null;
+    const sessionId = options.session ?? saved?.sessionId ?? generateSessionId();
+    const title =
+        options.title?.trim() || saved?.title || `Session ${new Date().toISOString()}`;
+    const rootResolved = path.resolve(options.rootDir);
 
     const client = new SpireApiClient(options.apiBaseUrl);
-    const session = await client.createSession(createSessionInput, token.accessToken);
+    const sessionInput: CreateSessionInput = { title };
+    const session = await client.ensureSession(sessionId, sessionInput);
 
     const pathFilter = await createPathFilter(options.rootDir);
 
     const snapshotSpinner = spinner();
-    snapshotSpinner.start("Building and uploading initial snapshot...");
-    const snapshot = await buildFileSnapshot(
-        session.id,
-        options.rootDir,
-        (absolutePath) => pathFilter.accepts(absolutePath)
+    snapshotSpinner.start(
+        rejoined
+            ? "Rejoining session and re-uploading snapshot from local files..."
+            : "Building and uploading initial snapshot..."
     );
-    await client.uploadSnapshot(token.accessToken, session.id, snapshot);
-    snapshotSpinner.stop("Initial snapshot uploaded.");
+    const snapshot = await buildFileSnapshot(session.id, options.rootDir, (absolutePath) =>
+        pathFilter.accepts(absolutePath)
+    );
+    await client.uploadSnapshot(session.id, snapshot);
 
-    const setupSpinner = spinner();
-    setupSpinner.start("Building initial file hash registry...");
-    const hashes = await buildInitialHashes(options.rootDir, (absolutePath) => pathFilter.accepts(absolutePath));
-    setupSpinner.stop("Initial file hash registry complete.");
+    /**
+     * Reuse the hashes computed during snapshot build to seed the change-detection
+     * registry. This avoids a redundant second directory walk immediately after
+     * the snapshot traversal already visited every file.
+     */
+    const hashes = hashRegistryFromSnapshot(rootResolved, snapshot.tree);
+    snapshotSpinner.stop(rejoined ? "Snapshot re-uploaded." : "Initial snapshot uploaded.");
 
-    let sequenceNum = 0;
-    let deltasSynced = 0;
-    const startedAt = new Date().toISOString();
+    let checkpointsSynced = 0;
+    const startedAt = saved?.startedAt ?? new Date().toISOString();
 
-    await writeActiveSession({
-        sessionId: session.id,
-        title: session.title,
-        rootDir: options.rootDir,
-        startedAt,
-        apiBaseUrl: options.apiBaseUrl,
-        deltasSynced,
-    });
+    let lastRegistryWrite = 0;
+    const persistRegistry = async () => {
+        await writeSessionForDir({
+            sessionId: session.id,
+            title: session.title,
+            rootDir: options.rootDir,
+            startedAt,
+            apiBaseUrl: options.apiBaseUrl,
+            checkpointsSynced,
+        });
+        lastRegistryWrite = Date.now();
+    };
 
-    log.success(`Session started: ${session.id}`);
+    /**
+     * Throttles registry writes to at most once every five seconds. A busy session
+     * can produce dozens of checkpoints per minute, and the on-disk registry does
+     * not need to be perfectly current between saves — it is only read at startup.
+     */
+    const maybePersistRegistry = () => {
+        if (Date.now() - lastRegistryWrite > 5000) {
+            void persistRegistry();
+        }
+    };
+
+    await persistRegistry();
+
+    const shareUrl = `${options.apiBaseUrl}/session/${session.id}`;
+    log.success(`${rejoined ? "Rejoined" : "Started"} session: ${session.id}`);
+    log.info(`Share this URL with viewers: ${shareUrl}`);
     log.info("Watching for changes. Press Ctrl+C to stop.");
 
-    const watcher = new FsWatcher(
-        {
-            rootDir: options.rootDir,
-            debounceMs: 300,
-            onError: (error) => {
-                const message = error instanceof Error ? error.message : String(error);
-                log.error(`Watcher error: ${message}`);
-            },
-        },
-        async (absolutePath) => {
-            if (!pathFilter.accepts(absolutePath)) {
+    /**
+     * Converts a single file-watcher event into a checkpoint manifest entry. The
+     * CLI sends only the new content and its SHA-256 hash; the server resolves the
+     * prior version and computes diff stats. No file content is retained in memory
+     * between checkpoints — only the per-file hash for change detection.
+     */
+    const buildEntry = async (
+        absolutePath: string,
+        kind: ChangeKind
+    ): Promise<CheckpointManifestEntry | null> => {
+        const relativePath = toPosixPath(path.relative(rootResolved, absolutePath));
+
+        if (kind === "deleted") {
+            if (!hashes.get(absolutePath)) {
+                /**
+                 * File was never tracked by the hash registry. This can happen when a
+                 * newly-created file is immediately deleted before the snapshot or a
+                 * previous checkpoint recorded it.
+                 */
+                return null;
+            }
+            hashes.remove(absolutePath);
+            return { path: relativePath, changeType: "deleted", hash: null, size: 0 };
+        }
+
+        if (!pathFilter.accepts(absolutePath)) {
+            return null;
+        }
+
+        const stats = await stat(absolutePath).catch(() => null);
+        if (!stats || !stats.isFile()) {
+            /**
+             * The file vanished between the watcher event and the stat call. If it was
+             * previously tracked, treat this as a deletion so the viewer stays in sync.
+             */
+            if (!hashes.get(absolutePath)) {
+                return null;
+            }
+            hashes.remove(absolutePath);
+            return { path: relativePath, changeType: "deleted", hash: null, size: 0 };
+        }
+
+        if (stats.size > MAX_FILE_BYTES) {
+            log.warn(
+                `Skipped ${relativePath}: exceeds ${Math.round(MAX_FILE_BYTES / 1024 / 1024)}MB limit.`
+            );
+            return null;
+        }
+
+        const buffer = await readFile(absolutePath);
+        const changeType = kind === "added" ? "added" : "modified";
+
+        if (isBinaryContent(buffer)) {
+            const hash = HashRegistry.fromBuffer(buffer);
+            if (!hashes.hasChanged(absolutePath, hash)) {
+                return null;
+            }
+            hashes.set(absolutePath, hash);
+            return {
+                path: relativePath,
+                changeType,
+                hash,
+                size: buffer.byteLength,
+                binary: true,
+            };
+        }
+
+        const content = buffer.toString("utf8");
+        const hash = HashRegistry.fromContent(content);
+        if (!hashes.hasChanged(absolutePath, hash)) {
+            return null;
+        }
+        hashes.set(absolutePath, hash);
+        return {
+            path: relativePath,
+            changeType,
+            hash,
+            size: buffer.byteLength,
+            content,
+        };
+    };
+
+    const batcher = new CheckpointBatcher({
+        idleMs: 400,
+        maxWaitMs: 2000,
+        onFlush: async (changes) => {
+            const entries: CheckpointManifestEntry[] = [];
+            for (const [absolutePath, kind] of changes) {
+                try {
+                    const entry = await buildEntry(absolutePath, kind);
+                    if (entry) {
+                        entries.push(entry);
+                    }
+                } catch (error) {
+                    log.warn(
+                        `Failed to read ${toPosixPath(path.relative(rootResolved, absolutePath))}: ${errorMessage(error)}`
+                    );
+                }
+            }
+
+            if (entries.length === 0) {
                 return;
             }
 
-            const isFile = await lstat(absolutePath)
-                .then((statResult) => statResult.isFile())
-                .catch(() => false);
-
-            if (!isFile) {
-                const relativePath = pathFilter.toRelativePath(absolutePath);
-                hashes.remove(absolutePath);
-                log.warn(`Skipped non-file change: ${relativePath}`);
-                return;
-            }
-
-            const content = await readFile(absolutePath, "utf8");
-            const nextHash = HashRegistry.fromContent(content);
-
-            if (!hashes.hasChanged(absolutePath, nextHash)) {
-                return;
-            }
-
-            const relativePath = toPosixPath(path.relative(options.rootDir, absolutePath));
-            const unifiedDiff = buildUnifiedDiff(relativePath, "", content);
-
-            const payload = {
+            const upload: CheckpointUpload = {
                 sessionId: session.id,
-                filePath: relativePath,
-                unifiedDiff,
-                hash: nextHash,
+                entries,
                 timestamp: Date.now(),
-                sequenceNum,
             };
 
-            const validation = validateDeltaPayload(payload);
+            const validation = validateCheckpointUpload(upload);
             if (!validation.ok) {
-                log.warn(`Skipped delta for ${relativePath}: ${validation.reason}`);
+                log.warn(`Skipped checkpoint: ${validation.reason}`);
                 return;
             }
 
-            await client.pushDelta(token.accessToken, payload);
-            hashes.set(absolutePath, nextHash);
-            sequenceNum += 1;
-            deltasSynced += 1;
+            try {
+                await client.pushCheckpoint(session.id, upload);
+            } catch (error) {
+                log.error(`Failed to sync checkpoint: ${errorMessage(error)}`);
+                return;
+            }
 
-            await writeActiveSession({
-                sessionId: session.id,
-                title: session.title,
-                rootDir: options.rootDir,
-                startedAt,
-                apiBaseUrl: options.apiBaseUrl,
-                deltasSynced,
-            });
+            checkpointsSynced += 1;
+            maybePersistRegistry();
+            const summary =
+                entries.length === 1 ? entries[0]!.path : `${entries.length} files`;
+            log.message(`Synced checkpoint #${checkpointsSynced} (${summary})`);
+        },
+    });
 
-            log.message(`Synced delta #${sequenceNum} for ${relativePath}`);
-        }
-    );
+    const watcher = new FileWatcher({
+        rootDir: rootResolved,
+        ignored: (absolutePath) => {
+            if (absolutePath === rootResolved) {
+                return false;
+            }
+            if (isStubDir(absolutePath)) {
+                return true;
+            }
+            return !pathFilter.accepts(absolutePath);
+        },
+        onEvent: (absolutePath, kind) => batcher.add(absolutePath, kind),
+        onError: (error) => log.error(`Watcher error: ${errorMessage(error)}`),
+    });
 
     watcher.start();
 
     await new Promise<void>((resolve) => {
-        const runtime = globalThis as { process?: { on: (event: string, cb: () => void) => void } };
-        runtime.process?.on("SIGINT", () => {
-            resolve();
-        });
+        const runtime = globalThis as {
+            process?: { on: (event: string, cb: () => void) => void };
+        };
+        const onSignal = () => resolve();
+        runtime.process?.on("SIGINT", onSignal);
+        runtime.process?.on("SIGTERM", onSignal);
     });
 
-    watcher.stop();
+    /**
+     * Flush any in-flight edits before tearing down so files saved in the moment
+     * before Ctrl+C are captured in the final checkpoint and not silently dropped.
+     */
+    await watcher.stop();
+    await batcher.flushNow();
+    batcher.stop();
+    await persistRegistry();
 
     try {
-        await client.endSession(session.id, token.accessToken);
-    } finally {
-        await clearActiveSession();
+        await client.endSession(session.id);
+        log.success(
+            `Session ${session.id} stopped. Re-run "spire start" here to resume the same URL.`
+        );
+    } catch (error) {
+        log.warn(
+            `Could not reach the server to end the session (${errorMessage(error)}). The share URL still resumes on next start.`
+        );
     }
-
-    log.success(`Session ${session.id} stopped.`);
 }
 
 const command: CommandModule = {
     name: "start",
-    hint: "Start session and watch files",
+    hint: "Start broadcasting and watch files",
     run: async ({ apiBaseUrl, options }) => {
         await runStartCommand({
             apiBaseUrl,
             rootDir: options.rootDir,
             title: options.title,
+            session: options.session,
         });
     },
 };

@@ -1,6 +1,7 @@
 export type CliOptions = {
     title?: string;
     rootDir: string;
+    session?: string;
 };
 
 export type CommandContext = {

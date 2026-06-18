@@ -87,6 +87,7 @@ export async function getCommandPromptOptions(): Promise<PromptOption[]> {
 export function parseOptions(runtimeProcess: RuntimeProcessLike): CliOptions {
     const argv = runtimeProcess.argv;
     let title: string | undefined;
+    let session: string | undefined;
     let rootDir = runtimeProcess.cwd();
 
     for (let index = 3; index < argv.length; index += 1) {
@@ -94,6 +95,12 @@ export function parseOptions(runtimeProcess: RuntimeProcessLike): CliOptions {
 
         if (arg === "--title") {
             title = argv[index + 1];
+            index += 1;
+            continue;
+        }
+
+        if (arg === "--session") {
+            session = argv[index + 1];
             index += 1;
             continue;
         }
@@ -110,6 +117,7 @@ export function parseOptions(runtimeProcess: RuntimeProcessLike): CliOptions {
     return {
         title,
         rootDir,
+        session,
     };
 }
 
