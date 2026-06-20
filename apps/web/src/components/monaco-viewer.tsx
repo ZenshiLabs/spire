@@ -7,73 +7,10 @@ import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { languageForPath } from "@/lib/languages";
 import { getHighlighter, resolveEditorTheme } from "@/lib/shiki";
 
-const EXTENSION_LANGUAGE: Record<string, string> = {
-  ts: "typescript",
-  tsx: "typescript",
-  mts: "typescript",
-  cts: "typescript",
-  js: "javascript",
-  jsx: "javascript",
-  mjs: "javascript",
-  cjs: "javascript",
-  json: "json",
-  jsonc: "json",
-  css: "css",
-  scss: "scss",
-  sass: "scss",
-  less: "less",
-  html: "html",
-  htm: "html",
-  xml: "xml",
-  svg: "xml",
-  md: "markdown",
-  markdown: "markdown",
-  mdx: "markdown",
-  py: "python",
-  rb: "ruby",
-  go: "go",
-  rs: "rust",
-  java: "java",
-  kt: "kotlin",
-  kts: "kotlin",
-  c: "c",
-  h: "c",
-  cpp: "cpp",
-  cc: "cpp",
-  cxx: "cpp",
-  hpp: "cpp",
-  cs: "csharp",
-  php: "php",
-  swift: "swift",
-  dart: "dart",
-  sh: "shellscript",
-  bash: "shellscript",
-  zsh: "shellscript",
-  yml: "yaml",
-  yaml: "yaml",
-  toml: "toml",
-  sql: "sql",
-  graphql: "graphql",
-  gql: "graphql",
-  dockerfile: "docker",
-  lua: "lua",
-  r: "r",
-  pl: "perl",
-  vue: "vue",
-  svelte: "svelte",
-  astro: "astro",
-};
-
-export function languageForPath(path: string): string {
-  const name = path.split("/").pop() ?? path;
-  if (name.toLowerCase() === "dockerfile") {
-    return "docker";
-  }
-  const extension = name.includes(".") ? name.split(".").pop()! : "";
-  return EXTENSION_LANGUAGE[extension.toLowerCase()] ?? "plaintext";
-}
+export { languageForPath };
 
 export const MONACO_OPTIONS = {
   readOnly: true,
