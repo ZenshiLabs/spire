@@ -10,7 +10,7 @@ import {
 } from "@spire/types";
 
 import { SpireApiClient } from "../api/client.js";
-import { MAX_FILE_BYTES, toPosixPath } from "../config.js";
+import { getWatcherTiming, MAX_FILE_BYTES, toPosixPath } from "../config.js";
 import { validateCheckpointUpload } from "../diff/payload-validator.js";
 import { readSessionForDir, writeSessionForDir } from "../session/local-session.js";
 import { buildFileSnapshot } from "../snapshot/build-snapshot.js";
@@ -136,6 +136,34 @@ export async function buildEntry(
     };
 }
 
+/** Max number of changed files read and hashed in parallel during one flush. */
+const CHECKPOINT_READ_CONCURRENCY = 16;
+
+/**
+ * Runs `fn` over `items` with at most `limit` concurrent executions, preserving
+ * input order in the result. Used to read and hash a burst of changed files in
+ * parallel — bounded so a large branch switch or save-all can't exhaust file
+ * descriptors — instead of awaiting them one at a time.
+ */
+async function mapLimit<T, R>(
+    items: readonly T[],
+    limit: number,
+    fn: (item: T) => Promise<R>
+): Promise<R[]> {
+    const results = new Array<R>(items.length);
+    let cursor = 0;
+    const runWorker = async () => {
+        while (cursor < items.length) {
+            const index = cursor;
+            cursor += 1;
+            results[index] = await fn(items[index]!);
+        }
+    };
+    const workerCount = Math.max(1, Math.min(limit, items.length));
+    await Promise.all(Array.from({ length: workerCount }, runWorker));
+    return results;
+}
+
 /**
  * Generates a URL-safe 8-character base36 session ID (e.g. "k3f9zq2a").
  * Uses `crypto.randomBytes` so each run produces a cryptographically unpredictable
@@ -221,24 +249,29 @@ export async function runStartCommand(options: StartOptions) {
     log.info("Watching for changes. Press Ctrl+C to stop.");
 
     const entryDeps: BuildEntryDeps = { rootResolved, pathFilter, hashes };
+    const timing = getWatcherTiming();
 
     const batcher = new CheckpointBatcher({
-        idleMs: 400,
-        maxWaitMs: 2000,
+        idleMs: timing.idleMs,
+        maxWaitMs: timing.maxWaitMs,
         onFlush: async (changes) => {
-            const entries: CheckpointManifestEntry[] = [];
-            for (const [absolutePath, kind] of changes) {
-                try {
-                    const entry = await buildEntry(absolutePath, kind, entryDeps);
-                    if (entry) {
-                        entries.push(entry);
+            const built = await mapLimit(
+                [...changes],
+                CHECKPOINT_READ_CONCURRENCY,
+                async ([absolutePath, kind]) => {
+                    try {
+                        return await buildEntry(absolutePath, kind, entryDeps);
+                    } catch (error) {
+                        log.warn(
+                            `Failed to read ${toPosixPath(path.relative(rootResolved, absolutePath))}: ${errorMessage(error)}`
+                        );
+                        return null;
                     }
-                } catch (error) {
-                    log.warn(
-                        `Failed to read ${toPosixPath(path.relative(rootResolved, absolutePath))}: ${errorMessage(error)}`
-                    );
                 }
-            }
+            );
+            const entries = built.filter(
+                (entry): entry is CheckpointManifestEntry => entry !== null
+            );
 
             if (entries.length === 0) {
                 return;
@@ -273,6 +306,7 @@ export async function runStartCommand(options: StartOptions) {
 
     const watcher = new FileWatcher({
         rootDir: rootResolved,
+        stabilityMs: timing.stabilityMs,
         ignored: (absolutePath) => {
             if (absolutePath === rootResolved) {
                 return false;

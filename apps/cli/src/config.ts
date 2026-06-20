@@ -20,6 +20,36 @@ export function getApiBaseUrl(env: RuntimeEnv = getRuntimeEnv()): string {
     return env.SPIRE_API_URL ?? env.API_BASE_URL ?? "http://localhost:3000";
 }
 
+export type WatcherTiming = {
+    /** Idle gap after the last change before a checkpoint is flushed. */
+    idleMs: number;
+    /** Hard cap on how long a sustained edit burst can delay a flush. */
+    maxWaitMs: number;
+    /** How long a file's size must hold steady before it's read (partial-write guard). */
+    stabilityMs: number;
+};
+
+function positiveIntEnv(value: string | undefined, fallback: number): number {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/**
+ * Timing knobs that dominate the end-to-end latency between a save and a viewer
+ * seeing the change. Defaults are tuned for a near-live feel; each can be raised
+ * per-environment — e.g. on a slow disk or a noisy filesystem that reports
+ * partial writes — without a rebuild. Lower values trade a little safety margin
+ * for snappier updates; the content hash makes the rare partial read self-heal
+ * on the next save.
+ */
+export function getWatcherTiming(env: RuntimeEnv = getRuntimeEnv()): WatcherTiming {
+    return {
+        idleMs: positiveIntEnv(env.SPIRE_IDLE_MS, 120),
+        maxWaitMs: positiveIntEnv(env.SPIRE_MAX_WAIT_MS, 1000),
+        stabilityMs: positiveIntEnv(env.SPIRE_STABILITY_MS, 75),
+    };
+}
+
 export function getSpireDataDir(): string {
     return path.join(homedir(), ".spire");
 }

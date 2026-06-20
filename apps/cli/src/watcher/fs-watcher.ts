@@ -9,6 +9,12 @@ type WatcherOptions = {
     ignored: (absolutePath: string) => boolean;
     onEvent: (absolutePath: string, kind: WatchEventKind) => void;
     onError?: (error: unknown) => void;
+    /**
+     * Size-stability window (ms) a changed file must hold before it is reported.
+     * This is the floor on detection latency, so it is kept low; raise it only on
+     * filesystems that surface noisy partial-write events.
+     */
+    stabilityMs: number;
 };
 
 /**
@@ -33,8 +39,8 @@ export class FileWatcher {
             ignoreInitial: true,
             persistent: true,
             awaitWriteFinish: {
-                stabilityThreshold: 120,
-                pollInterval: 40,
+                stabilityThreshold: this.options.stabilityMs,
+                pollInterval: Math.max(10, Math.floor(this.options.stabilityMs / 3)),
             },
         });
 
