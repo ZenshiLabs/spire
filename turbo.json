@@ -1,7 +1,7 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "ui": "tui",
-  "globalEnv": ["DATABASE_URL"],
+  "globalEnv": ["DATABASE_URL", "SPIRE_EAGER_MAX_BYTES", "SPIRE_EAGER_MAX_FILES"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

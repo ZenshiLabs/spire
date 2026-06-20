@@ -27,7 +27,7 @@ function getRuntimeProcess(): RuntimeProcess {
 }
 
 async function promptForCommand(): Promise<CliCommand | null> {
-    const options = await getCommandPromptOptions();
+    const options = getCommandPromptOptions();
 
     const selected = await select({
         message: "What do you want to do?",
@@ -46,7 +46,7 @@ async function main() {
     const runtimeProcess = getRuntimeProcess();
     const apiBaseUrl = getApiBaseUrl();
 
-    const command = (await getArgCommand(runtimeProcess.argv)) ?? (await promptForCommand());
+    const command = getArgCommand(runtimeProcess.argv) ?? (await promptForCommand());
     const options = parseOptions(runtimeProcess);
 
     if (!command) {

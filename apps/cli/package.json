@@ -4,18 +4,18 @@
   "private": true,
   "type": "module",
   "bin": {
-    "spire": "./dist/index.cjs"
+    "spire": "./dist/index.mjs"
   },
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsup src/index.ts --format cjs --target node22 --dts --outDir dist",
+    "build": "tsdown src/index.ts --format esm --platform node --target node22 --no-dts",
     "lint": "eslint . --max-warnings 0",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
     "@spire/types": "workspace:*",
-    "@clack/prompts": "^0.9.1",
-    "chokidar": "^4.0.3",
+    "@clack/prompts": "^1.6.0",
+    "chokidar": "^5.0.0",
     "ignore": "^7.0.5"
   },
   "devDependencies": {
@@ -23,11 +23,11 @@
     "@spire/typescript-config": "workspace:*",
     "@types/node": "^22.15.3",
     "eslint": "^9.39.1",
-    "tsup": "^8.5.0",
-    "tsx": "^4.20.6",
+    "tsdown": "^0.22.3",
+    "tsx": "^4.22.4",
     "typescript": "5.9.2"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20.19.0"
   }
 }

@@ -14,6 +14,9 @@ import { toPosixPath } from "../config.js";
  */
 export const STUB_DIRS = ["dist", ".next", "build", "out", "coverage", ".build"];
 
+/** Set view of STUB_DIRS for O(1) membership checks in the hot watcher path. */
+const STUB_DIR_SET = new Set(STUB_DIRS);
+
 const DEFAULT_IGNORES = [
     "node_modules/**",
     ".git/**",
@@ -28,7 +31,7 @@ const DEFAULT_IGNORES = [
  * and snapshot traversal irrespective of any .gitignore rules.
  */
 export function isStubDir(absolutePath: string): boolean {
-    return STUB_DIRS.includes(path.basename(absolutePath));
+    return STUB_DIR_SET.has(path.basename(absolutePath));
 }
 
 export type PathFilter = {
