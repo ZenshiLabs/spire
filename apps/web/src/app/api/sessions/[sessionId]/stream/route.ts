@@ -6,6 +6,13 @@ import {
 } from "../../../_lib/state";
 import type { SSEEvent } from "@spire/types";
 
+/**
+ * The SSE stream is long-lived and holds a per-instance subscriber, so it must
+ * run on the Node runtime and never be statically optimised or cached.
+ */
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 type RouteContext = {
     params: { sessionId: string } | Promise<{ sessionId: string }>;
 };

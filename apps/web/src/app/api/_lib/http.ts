@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 
 type ErrorDetails = Record<string, unknown> | undefined;
 
-export function success<T>(data: T, status = 200) {
-    return NextResponse.json({ ok: true, data }, { status });
+export function success<T>(data: T, status = 200, headers?: HeadersInit) {
+    return NextResponse.json({ ok: true, data }, { status, headers });
 }
 
 export function failure(

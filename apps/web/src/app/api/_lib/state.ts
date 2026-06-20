@@ -21,6 +21,7 @@ import {
 } from "@spire/db";
 import {
     baseName,
+    HASH_RE,
     type ChangeType,
     type Checkpoint,
     type CheckpointChange,
@@ -32,6 +33,15 @@ import {
     type SSEEvent,
 } from "@spire/types";
 import { diffLines } from "diff";
+
+import {
+    cacheDel,
+    cacheGetJSON,
+    cacheSetJSON,
+    ensureSubscriber,
+    nextCheckpointSeq,
+    publishSessionEvent as redisPublishEvent,
+} from "@/lib/redis";
 
 type EndSessionResult =
     | { ok: true; session: SessionResponse }
@@ -56,10 +66,27 @@ const EAGER_MAX_FILES =
     Number(process.env.SPIRE_EAGER_MAX_FILES) || 400;
 
 /**
- * Session state is persisted in Postgres via @spire/db. The pub/sub mechanism
- * here is intentionally in-process — it only fans live events to SSE clients
- * connected to this server instance, with no need for an external message broker
- * given the single-broadcaster-per-session design constraint.
+ * Session rows change rarely and are read on every SSE connect. Cache them for a
+ * short window and invalidate explicitly on every status transition (create,
+ * reactivate, end) so an ended session is never served as active. Blobs are
+ * immutable and content-addressed, so they cache for far longer with no
+ * invalidation. Both are no-ops when Redis is disabled.
+ */
+const SESSION_CACHE_TTL = 30;
+const BLOB_CACHE_TTL = 60 * 60 * 24;
+
+const sessionKey = (sessionId: string) => `sess:${sessionId}`;
+const blobKey = (sessionId: string, hash: string) => `blob:${sessionId}:${hash}`;
+
+type CachedBlob = { content: string; binary: boolean };
+
+/**
+ * Live events are fanned out to SSE clients connected to *this* process via the
+ * in-memory `sessionSubscribers` map. When `REDIS_URL` is set, events are also
+ * published to a shared Redis channel and replayed into the same local fan-out
+ * on every *other* instance — so a checkpoint POST on one node reaches viewers
+ * whose SSE stream is held open on another. With Redis off this stays a pure
+ * in-process broker, exactly as before.
  */
 const sessionSubscribers = new Map<string, Set<(event: SSEEvent) => void>>();
 
@@ -67,6 +94,7 @@ function nowMs() {
     return Date.now();
 }
 
+/** Delivers an event only to SSE clients connected to this process. */
 function emitSessionEvent(sessionId: string, event: SSEEvent) {
     const listeners = sessionSubscribers.get(sessionId);
     if (!listeners || listeners.size === 0) {
@@ -75,6 +103,35 @@ function emitSessionEvent(sessionId: string, event: SSEEvent) {
     for (const listener of listeners) {
         listener(event);
     }
+}
+
+/**
+ * Delivers locally now (low latency, unchanged behaviour) and publishes to other
+ * instances. The publishing instance skips its own echo on the subscriber side,
+ * so each viewer receives the event exactly once.
+ */
+function broadcastSessionEvent(sessionId: string, event: SSEEvent) {
+    emitSessionEvent(sessionId, event);
+    redisPublishEvent(sessionId, event);
+}
+
+/** Reads a blob through the shared cache, writing through on a miss. */
+async function readBlobCached(
+    sessionId: string,
+    hash: string
+): Promise<CachedBlob | null> {
+    const key = blobKey(sessionId, hash);
+    const cached = await cacheGetJSON<CachedBlob>(key);
+    if (cached) {
+        return cached;
+    }
+    const blob = await dbGetBlob(sessionId, hash);
+    if (!blob) {
+        return null;
+    }
+    const value: CachedBlob = { content: blob.content, binary: blob.binary };
+    await cacheSetJSON(key, value, BLOB_CACHE_TTL);
+    return value;
 }
 
 type ExtractedFile = {
@@ -154,15 +211,30 @@ function buildLabel(changes: CheckpointChange[]): string {
  * Idempotent — re-running the CLI for the same ID yields a live session without
  * wiping history or resetting the share URL.
  */
-export function upsertSession(
+export async function upsertSession(
     sessionId: string,
     input: CreateSessionInput
 ): Promise<SessionResponse> {
-    return dbUpsertSession(sessionId, input);
+    const session = await dbUpsertSession(sessionId, input);
+    // Status flipped to active (and title/desc may have changed) — drop any
+    // cached row so reads see the live record immediately.
+    await cacheDel(sessionKey(sessionId));
+    return session;
 }
 
-export function getSessionById(sessionId: string): Promise<SessionResponse | null> {
-    return dbGetSession(sessionId);
+export async function getSessionById(
+    sessionId: string
+): Promise<SessionResponse | null> {
+    const key = sessionKey(sessionId);
+    const cached = await cacheGetJSON<SessionResponse>(key);
+    if (cached) {
+        return cached;
+    }
+    const session = await dbGetSession(sessionId);
+    if (session) {
+        await cacheSetJSON(key, session, SESSION_CACHE_TTL);
+    }
+    return session;
 }
 
 export function getCheckpoints(sessionId: string, opts?: { limit?: number; beforeSeq?: number }) {
@@ -173,8 +245,29 @@ export function getCheckpoint(sessionId: string, seq: number) {
     return dbGetCheckpoint(sessionId, seq);
 }
 
-export function getFileContent(sessionId: string, path: string, ref: string) {
-    return dbGetFileContent(sessionId, path, ref);
+/**
+ * Resolves file content for a `ref`, caching the immutable blob by hash. A
+ * direct hash ref is served straight from cache on a hit; "latest"/seq refs
+ * resolve through the DB (the head can move) but still warm the blob cache by
+ * the resolved hash for subsequent opens.
+ */
+export async function getFileContent(sessionId: string, path: string, ref: string) {
+    if (HASH_RE.test(ref)) {
+        const key = blobKey(sessionId, ref);
+        const cached = await cacheGetJSON<CachedBlob>(key);
+        if (cached) {
+            return { content: cached.content, binary: cached.binary, hash: ref };
+        }
+    }
+    const result = await dbGetFileContent(sessionId, path, ref);
+    if (result) {
+        await cacheSetJSON(
+            blobKey(sessionId, result.hash),
+            { content: result.content, binary: result.binary } satisfies CachedBlob,
+            BLOB_CACHE_TTL
+        );
+    }
+    return result;
 }
 
 /**
@@ -212,6 +305,10 @@ export function subscribeToSession(
     sessionId: string,
     listener: (event: SSEEvent) => void
 ) {
+    // Start the cross-instance bridge on first viewer; remote events are
+    // replayed into the same local fan-out. No-op when Redis is off / started.
+    ensureSubscriber(emitSessionEvent);
+
     const existing =
         sessionSubscribers.get(sessionId) ?? new Set<(event: SSEEvent) => void>();
     existing.add(listener);
@@ -246,8 +343,10 @@ export async function endSession(sessionId: string): Promise<EndSessionResult> {
     if (!updated) {
         return { ok: false, code: "not_found" };
     }
+    // Status is now "ended" — invalidate before any reader can re-cache active.
+    await cacheDel(sessionKey(sessionId));
 
-    emitSessionEvent(sessionId, {
+    broadcastSessionEvent(sessionId, {
         type: "session_ended",
         sessionId,
         timestamp: nowMs(),
@@ -260,7 +359,7 @@ export async function endSession(sessionId: string): Promise<EndSessionResult> {
  * Fans a checkpoint event to all SSE clients currently connected to this session.
  */
 function emitCheckpoint(sessionId: string, checkpoint: Checkpoint) {
-    emitSessionEvent(sessionId, { type: "checkpoint", payload: checkpoint });
+    broadcastSessionEvent(sessionId, { type: "checkpoint", payload: checkpoint });
 }
 
 export type CheckpointChangeCalculation = {
@@ -484,7 +583,9 @@ export async function ingestSnapshot(payload: FileSnapshot): Promise<IngestResul
     }
 
     if (changes.length > 0) {
-        const seq = maxSeq + 1;
+        const seq =
+            (await nextCheckpointSeq(sessionId, () => Promise.resolve(maxSeq))) ??
+            maxSeq + 1;
         const label = isNew ? "Initial snapshot" : "Resumed session";
         await dbWriteCheckpoint({
             sessionId,
@@ -499,7 +600,7 @@ export async function ingestSnapshot(payload: FileSnapshot): Promise<IngestResul
             headDeletes,
             newBlobs: [],
         });
-        emitSessionEvent(sessionId, {
+        broadcastSessionEvent(sessionId, {
             type: "snapshot",
             payload: {
                 sessionId,
@@ -519,7 +620,7 @@ export async function ingestSnapshot(payload: FileSnapshot): Promise<IngestResul
             changes,
         });
     } else {
-        emitSessionEvent(sessionId, {
+        broadcastSessionEvent(sessionId, {
             type: "snapshot",
             payload: {
                 sessionId,
@@ -558,14 +659,17 @@ export async function ingestCheckpoint(payload: CheckpointUpload): Promise<Inges
         await calculateCheckpointChanges(
             payload.entries,
             (path) => dbGetFileHead(sessionId, path),
-            (hash) => dbGetBlob(sessionId, hash)
+            (hash) => readBlobCached(sessionId, hash)
         );
 
     if (changes.length === 0) {
         return { ok: true };
     }
 
-    const seq = (await dbGetMaxCheckpointSeq(sessionId)) + 1;
+    const seq =
+        (await nextCheckpointSeq(sessionId, () =>
+            dbGetMaxCheckpointSeq(sessionId)
+        )) ?? (await dbGetMaxCheckpointSeq(sessionId)) + 1;
     const label = buildLabel(changes);
     await dbWriteCheckpoint({
         sessionId,

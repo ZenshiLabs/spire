@@ -1,3 +1,4 @@
+import { HASH_RE } from "@spire/types";
 import { failure, success } from "../../../_lib/http";
 import { getFileContent } from "../../../_lib/state";
 
@@ -24,5 +25,11 @@ export async function GET(request: Request, context: RouteContext) {
         return failure("not_found", "File version was not found.", 404);
     }
 
-    return success(result);
+    // A concrete blob hash is immutable content — let browsers/CDN cache it
+    // forever. "latest"/seq refs can change as the session advances, so they
+    // must always revalidate.
+    const cacheControl = HASH_RE.test(ref)
+        ? "public, max-age=31536000, immutable"
+        : "no-store";
+    return success(result, 200, { "cache-control": cacheControl });
 }
