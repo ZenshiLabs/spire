@@ -25,7 +25,7 @@ flowchart TB
     end
 
     subgraph lib["State Layer (app/api/_lib/)"]
-        STATE_MOD["state.ts\nsession · snapshot · checkpoint logic\nin-process SSE fan-out"]
+        STATE_MOD["state.ts\nsession · snapshot · checkpoint logic\nSSE fan-out — in-process + optional Redis bridge"]
         HTTP_MOD["http.ts\ntyped response helpers"]
     end
 
@@ -38,9 +38,11 @@ flowchart TB
     end
 
     DB[(Postgres\nvia @spire/db)]
+    REDIS[(Redis — optional\nsrc/lib/redis.ts\ncross-instance pub/sub · cache · seq)]
 
     R1 & R2 & R3 & R4 & R5 & R6 & R7 & R8 & R9 --> STATE_MOD
     STATE_MOD --> DB
+    STATE_MOD -.->|when REDIS_URL set| REDIS
     SESSION --> STREAM
     STREAM --> STORES
     STORES --> MONACO & TREE & TIMELINE
@@ -74,8 +76,9 @@ sequenceDiagram
 
 | Path | Description |
 |------|-------------|
-| `src/app/api/_lib/state.ts` | Core session/snapshot/checkpoint business logic + SSE pub/sub |
-| `src/app/api/_lib/http.ts` | `success` / `failure` / `readJsonBody` response helpers |
+| `src/app/api/_lib/state.ts` | Core session/snapshot/checkpoint business logic + SSE pub/sub (Redis-bridged across instances when configured) |
+| `src/app/api/_lib/http.ts` | `success` / `failure` / `readJsonBody` response helpers (optional cache headers) |
+| `src/lib/redis.ts` | Env-gated Redis layer: cross-instance SSE bridge, session/blob cache, atomic checkpoint seq |
 | `src/app/session/[sessionId]/session-viewer.tsx` | Top-level viewer layout (panels, status bar, quick-open) |
 | `src/app/session/[sessionId]/file-tree.tsx` | Virtualized file tree with context menus |
 | `src/app/session/[sessionId]/code-viewer.tsx` | Monaco tabs, diff mode, breadcrumbs |
@@ -91,5 +94,6 @@ sequenceDiagram
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `DATABASE_URL` | Yes | Neon/Postgres connection string |
+| `REDIS_URL` | No | TCP `rediss://` endpoint (e.g. Upstash). Enables cross-instance live events + session/blob cache; falls back to in-process when unset |
 | `SPIRE_EAGER_MAX_BYTES` | No | Max total session size for eager mode (default: 1.5 MB) |
 | `SPIRE_EAGER_MAX_FILES` | No | Max file count for eager mode (default: 400) |

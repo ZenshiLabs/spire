@@ -21,8 +21,12 @@ flowchart LR
         STREAM["GET /sessions/:id/stream\nSSE live events"]
         FILE["GET /sessions/:id/file\nlazy content fetch"]
         DB[(Postgres)]
+        REDIS[(Redis — optional\ncross-instance pub/sub · cache · seq)]
         SESS & SNAP & CHKPT --> DB
         DB --> STATE & STREAM & FILE
+        SNAP & CHKPT -.->|publish events| REDIS
+        REDIS -.->|live events across instances| STREAM
+        STATE & FILE -.->|read-through cache| REDIS
     end
 
     subgraph viewer["Browser Viewer"]
@@ -59,6 +63,7 @@ sequenceDiagram
     loop File changes
         CLI->>API: POST /sessions/:id/checkpoint (save burst)
         API-->>SSE: checkpoint event (fan out)
+        Note over API,SSE: With REDIS_URL set, the event is also published to Redis<br/>and fanned out to viewers connected to other instances
         SSE-->>V: checkpoint event (apply to tree)
     end
 
@@ -110,4 +115,4 @@ pnpm lint         # lint all workspaces
 - **No authentication** — the session ID is the credential. Spire is intentionally ephemeral.
 - **Content-addressed storage** — file content is stored as SHA-256 blobs, deduplicated per session. Re-saving a file to a prior state costs nothing.
 - **Eager / lazy mode** — sessions under ~1.5 MB / 400 files ship all content up front for instant opens; larger sessions serve content per-file on demand. Thresholds are tunable via `SPIRE_EAGER_MAX_BYTES` and `SPIRE_EAGER_MAX_FILES` env vars on the web server.
-- **In-process pub/sub** — live events are fanned out in-memory; no external message broker is required.
+- **In-process pub/sub, optionally Redis-backed** — live events fan out in-memory with no broker required for a single instance. Set `REDIS_URL` (a TCP `rediss://` endpoint such as Upstash) to bridge events across instances so the web app can run on more than one node — the same connection also backs a short-TTL session cache, an immutable blob cache, and an atomic checkpoint-seq counter. With `REDIS_URL` unset everything degrades to the in-process path. Multi-instance SSE requires a long-running Node host (not pure edge/serverless).
