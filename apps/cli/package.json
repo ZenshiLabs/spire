@@ -1,24 +1,52 @@
 {
-  "name": "@spire/cli",
-  "version": "0.0.0",
-  "private": true,
+  "name": "@zenshilabs/spire",
+  "version": "0.1.0",
+  "description": "Broadcast a local directory so others can watch it live in real time — no accounts, the session ID is the share link.",
+  "keywords": [
+    "spire",
+    "cli",
+    "broadcast",
+    "live",
+    "real-time",
+    "file-watcher",
+    "share",
+    "pair-programming"
+  ],
+  "license": "MIT",
+  "author": "ZenshiLabs",
+  "homepage": "https://github.com/ZenshiLabs/spire/tree/main/apps/cli#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZenshiLabs/spire.git",
+    "directory": "apps/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/ZenshiLabs/spire/issues"
+  },
   "type": "module",
   "bin": {
     "spire": "./dist/index.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsdown src/index.ts --format esm --platform node --target node22 --no-dts",
     "lint": "eslint . --max-warnings 0",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "prepublishOnly": "tsdown src/index.ts --format esm --platform node --target node22 --no-dts"
   },
   "dependencies": {
-    "@spire/types": "workspace:*",
     "@clack/prompts": "^1.6.0",
     "chokidar": "^5.0.0",
     "ignore": "^7.0.5"
   },
   "devDependencies": {
+    "@spire/types": "workspace:*",
     "@spire/eslint-config": "workspace:*",
     "@spire/typescript-config": "workspace:*",
     "@types/node": "^22.15.3",
@@ -28,6 +56,6 @@
     "typescript": "5.9.2"
   },
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=22"
   }
 }

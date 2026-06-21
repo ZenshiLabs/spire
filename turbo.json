@@ -20,7 +20,7 @@
       "dependsOn": ["@spire/types#build"],
       "outputs": ["dist/**"]
     },
-    "@spire/cli#build": {
+    "@zenshilabs/spire#build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**"],
       "env": ["API_BASE_URL", "SPIRE_API_URL"]

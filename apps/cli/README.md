@@ -1,6 +1,18 @@
-# @spire/cli
+# @zenshilabs/spire
 
 Node.js CLI for Spire — broadcast a local directory so others can watch it live in real time. No accounts or sign-in; the session ID is the share link.
+
+## Install
+
+Requires Node.js >= 22 (active LTS lines only).
+
+```sh
+# one-off, no install
+npx @zenshilabs/spire start
+
+# or install globally for the `spire` command
+npm install -g @zenshilabs/spire
+```
 
 ## Commands
 
@@ -9,6 +21,9 @@ spire start [--dir <path>] [--title <text>] [--session <id>]
 spire status
 spire stop
 ```
+
+By default the CLI talks to `http://localhost:3000`. Point it at a hosted Spire
+instance by setting `SPIRE_API_URL` (e.g. `SPIRE_API_URL=https://spire.example.com spire start`).
 
 Commands are auto-discovered from `src/commands/*.ts` — add a file that exports a default `CommandModule` and it appears in both the argv parser and the interactive prompt without manual registration.
 

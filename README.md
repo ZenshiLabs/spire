@@ -6,7 +6,7 @@ Real-time code sharing, zero accounts required. Run the CLI to broadcast a local
 
 ```mermaid
 flowchart LR
-    subgraph cli["@spire/cli (broadcaster)"]
+    subgraph cli["@zenshilabs/spire (broadcaster)"]
         direction TB
         W[FileWatcher] -->|events| CB[CheckpointBatcher]
         CB -->|batched saves| CLIENT[SpireApiClient]
@@ -81,7 +81,7 @@ The session ID is stored in `~/.spire/sessions.json` keyed by directory. Re-runn
 | Package | Description |
 |---------|-------------|
 | `apps/web` | Next.js 16 — landing page, session viewer UI, REST + SSE API |
-| `apps/cli` | Node.js CLI (`@spire/cli`) — file watcher, snapshot, checkpoint batching |
+| `apps/cli` | Node.js CLI (published as [`@zenshilabs/spire`](https://www.npmjs.com/package/@zenshilabs/spire)) — file watcher, snapshot, checkpoint batching |
 | `packages/types` | Zod schemas, TypeScript types, and file-identity utilities (`HASH_RE`, `isValidHash`, `baseName`) shared across the monorepo |
 | `packages/stores` | Zustand stores for the web viewer (file tree, history, editor, theme) |
 | `packages/db` | Drizzle ORM schema and typed queries (Neon/Postgres) |
@@ -103,7 +103,7 @@ pnpm lint         # lint all workspaces
 1. Start the web app: `pnpm dev` (serves on `http://localhost:3000`).
 2. In a second terminal, broadcast a directory:
    ```sh
-   pnpm --filter @spire/cli dev start --dir <path> --title "My session"
+   pnpm --filter @zenshilabs/spire dev start --dir <path> --title "My session"
    ```
 3. The CLI prints a share URL — `http://localhost:3000/session/<id>`. Share it.
 4. To resume after a disconnect, re-run the same command in the same directory.

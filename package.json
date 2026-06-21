@@ -5,7 +5,7 @@
     "build": "turbo run build",
     "dev": "turbo run dev --filter=web",
     "dev:web": "turbo run dev --filter=web",
-    "dev:cli": "turbo run build --filter=@spire/types && pnpm --filter=@spire/cli dev",
+    "dev:cli": "turbo run build --filter=@spire/types && pnpm --filter=@zenshilabs/spire dev",
     "lint": "turbo run lint --ui=stream",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types",
