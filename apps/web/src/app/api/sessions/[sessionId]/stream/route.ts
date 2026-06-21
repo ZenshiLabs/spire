@@ -2,6 +2,7 @@ import { failure } from "../../../_lib/http";
 import {
     buildConnectedEvent,
     getSessionById,
+    isSessionStale,
     subscribeToSession,
 } from "../../../_lib/state";
 import type { SSEEvent } from "@spire/types";
@@ -58,9 +59,39 @@ export async function GET(_request: Request, context: RouteContext) {
                 controller.enqueue(encoder.encode(encodeSSEData(event)));
             });
 
-            heartbeat = setInterval(() => {
-                controller.enqueue(encoder.encode(`: keepalive ${Date.now()}\n\n`));
-            }, 15000);
+            /**
+             * Keepalive doubles as a liveness probe. A clean `spire stop` already
+             * fans out a `session_ended` event, but an abrupt CLI exit (closed
+             * terminal, crash, lost network) sends nothing — so on each tick we
+             * also check whether the broadcast has gone stale and, if so, tell
+             * this already-connected viewer the session ended and close.
+             */
+            const tick = async () => {
+                try {
+                    if (await isSessionStale(sessionId)) {
+                        controller.enqueue(
+                            encoder.encode(
+                                encodeSSEData({
+                                    type: "session_ended",
+                                    sessionId,
+                                    timestamp: Date.now(),
+                                })
+                            )
+                        );
+                        cleanup();
+                        controller.close();
+                        return;
+                    }
+                    controller.enqueue(
+                        encoder.encode(`: keepalive ${Date.now()}\n\n`)
+                    );
+                } catch {
+                    // The stream was already torn down (viewer disconnected).
+                    cleanup();
+                }
+            };
+
+            heartbeat = setInterval(() => void tick(), 15000);
 
             if (session.status !== "active") {
                 cleanup();

@@ -41,6 +41,17 @@ export class SpireApiClient {
     }
 
     /**
+     * Pings the server to report that this broadcast is still live. The server
+     * treats a session whose last heartbeat (or checkpoint) has gone stale as
+     * ended, so an idle broadcast that sends no checkpoints still needs these to
+     * keep its viewers showing "live". Cheap and bodyless — just bumps the
+     * session's last-seen timestamp.
+     */
+    async heartbeat(sessionId: string) {
+        await this.request("POST", `/api/sessions/${sessionId}/heartbeat`);
+    }
+
+    /**
      * Validates and uploads a save-burst checkpoint — a batch of file changes
      * produced by the CheckpointBatcher after an idle or max-wait interval fires.
      * The schema is validated client-side before the network call to surface

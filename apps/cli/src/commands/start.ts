@@ -10,7 +10,12 @@ import {
 } from "@spire/types";
 
 import { SpireApiClient } from "../api/client.js";
-import { getWatcherTiming, MAX_FILE_BYTES, toPosixPath } from "../config.js";
+import {
+    getHeartbeatIntervalMs,
+    getWatcherTiming,
+    MAX_FILE_BYTES,
+    toPosixPath,
+} from "../config.js";
 import { validateCheckpointUpload } from "../diff/payload-validator.js";
 import { readSessionForDir, writeSessionForDir } from "../session/local-session.js";
 import { buildFileSnapshot } from "../snapshot/build-snapshot.js";
@@ -179,6 +184,55 @@ function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Resolves when the user asks to stop broadcasting — a SIGINT (Ctrl+C), a
+ * SIGTERM, or a raw Ctrl+C byte read from stdin.
+ *
+ * On Windows, @clack/prompts leaves stdin in raw mode after a spinner runs: its
+ * internal `block()` intentionally skips restoring cooked mode on win32
+ * (`platform.startsWith("win") && skip setRawMode(false)`). A raw-mode console
+ * delivers Ctrl+C as a literal ETX (0x03) byte rather than raising SIGINT, so a
+ * SIGINT-only handler never fires and the CLI appears to ignore Ctrl+C. We
+ * restore cooked mode so SIGINT works again, and also watch stdin for a raw
+ * 0x03 as a belt-and-braces fallback. Listeners are torn down on resolve so the
+ * process can exit cleanly once shutdown finishes.
+ */
+function waitForShutdown(): Promise<void> {
+    const { stdin } = process;
+
+    if (stdin.isTTY && stdin.isRaw) {
+        stdin.setRawMode(false);
+    }
+
+    return new Promise<void>((resolve) => {
+        let settled = false;
+
+        function finish() {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            process.removeListener("SIGINT", finish);
+            process.removeListener("SIGTERM", finish);
+            stdin.removeListener("data", onData);
+            stdin.pause();
+            resolve();
+        }
+
+        function onData(chunk: Buffer) {
+            // Fallback for a console still in raw mode: ETX (0x03) is Ctrl+C.
+            if (chunk.includes(0x03)) {
+                finish();
+            }
+        }
+
+        process.on("SIGINT", finish);
+        process.on("SIGTERM", finish);
+        stdin.on("data", onData);
+        stdin.resume();
+    });
+}
+
 export async function runStartCommand(options: StartOptions) {
     const saved = await readSessionForDir(options.rootDir);
     const rejoined = !options.session && saved !== null;
@@ -322,14 +376,20 @@ export async function runStartCommand(options: StartOptions) {
 
     watcher.start();
 
-    await new Promise<void>((resolve) => {
-        const runtime = globalThis as {
-            process?: { on: (event: string, cb: () => void) => void };
-        };
-        const onSignal = () => resolve();
-        runtime.process?.on("SIGINT", onSignal);
-        runtime.process?.on("SIGTERM", onSignal);
-    });
+    /**
+     * Report liveness on a fixed interval so an idle broadcast — one watching for
+     * changes but not producing checkpoints — still keeps its viewers showing
+     * "live". A dropped heartbeat is non-fatal: the next tick retries and the
+     * server's staleness window tolerates brief gaps. Unref'd so it never holds
+     * the process open on its own; the watcher and stdin keep it alive.
+     */
+    const heartbeat = setInterval(() => {
+        void client.heartbeat(session.id).catch(() => {});
+    }, getHeartbeatIntervalMs());
+    heartbeat.unref();
+
+    await waitForShutdown();
+    clearInterval(heartbeat);
 
     /**
      * Flush any in-flight edits before tearing down so files saved in the moment

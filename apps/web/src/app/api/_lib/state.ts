@@ -75,6 +75,17 @@ const EAGER_MAX_FILES =
 const SESSION_CACHE_TTL = 30;
 const BLOB_CACHE_TTL = 60 * 60 * 24;
 
+/**
+ * A broadcast is "live" only while the CLI keeps heartbeating. If no heartbeat
+ * (or checkpoint) has touched the session within this window, viewers see it as
+ * ended even though the row is still `active` — this is what surfaces an abrupt
+ * CLI exit (closed terminal, kill, crash, lost network) where the explicit
+ * end-session call never reached the server. Kept comfortably above both
+ * SESSION_CACHE_TTL and the CLI heartbeat interval so a cached row or a single
+ * dropped heartbeat can never make a genuinely live session look ended.
+ */
+const SESSION_STALE_MS = Number(process.env.SPIRE_SESSION_STALE_MS) || 45_000;
+
 const sessionKey = (sessionId: string) => `sess:${sessionId}`;
 const blobKey = (sessionId: string, hash: string) => `blob:${sessionId}:${hash}`;
 
@@ -92,6 +103,28 @@ const sessionSubscribers = new Map<string, Set<(event: SSEEvent) => void>>();
 
 function nowMs() {
     return Date.now();
+}
+
+/** True when an active session's last heartbeat has aged past the live window. */
+function isStale(session: SessionResponse): boolean {
+    return (
+        session.status === "active" &&
+        nowMs() - new Date(session.updatedAt).getTime() > SESSION_STALE_MS
+    );
+}
+
+/**
+ * Presents a session's liveness to viewers. A row that is still `active` in the
+ * database but whose heartbeat has gone stale is reported as ended (with
+ * `endedAt` pinned to when it was last seen) without mutating the row — so a CLI
+ * that recovers from a brief network drop resumes as live on its next heartbeat.
+ * The persisted status only ever changes on an explicit start/stop.
+ */
+function withLiveness(session: SessionResponse): SessionResponse {
+    if (!isStale(session)) {
+        return session;
+    }
+    return { ...session, status: "ended", endedAt: session.updatedAt };
 }
 
 /** Delivers an event only to SSE clients connected to this process. */
@@ -226,15 +259,42 @@ export async function getSessionById(
     sessionId: string
 ): Promise<SessionResponse | null> {
     const key = sessionKey(sessionId);
+    // The raw row is cached; liveness is derived per read against the current
+    // clock so a session that goes stale while cached is still reported ended.
     const cached = await cacheGetJSON<SessionResponse>(key);
     if (cached) {
-        return cached;
+        return withLiveness(cached);
     }
     const session = await dbGetSession(sessionId);
     if (session) {
         await cacheSetJSON(key, session, SESSION_CACHE_TTL);
     }
-    return session;
+    return session ? withLiveness(session) : null;
+}
+
+/**
+ * Records CLI liveness by bumping `updatedAt`, keeping the session inside the
+ * live window even when an idle broadcast is sending no checkpoints. Returns
+ * false if the session does not exist. Never changes status — see withLiveness.
+ */
+export async function touchSession(sessionId: string): Promise<boolean> {
+    const session = await dbGetSession(sessionId);
+    if (!session) {
+        return false;
+    }
+    await dbTouchSession(sessionId);
+    return true;
+}
+
+/**
+ * Whether an open viewer stream should close because the broadcast has gone
+ * stale (the CLI stopped heartbeating). Reads the row directly — bypassing the
+ * cache — so it reflects the latest heartbeat. Presentational only: it does not
+ * mutate the session, so a recovering CLI can still resume as live.
+ */
+export async function isSessionStale(sessionId: string): Promise<boolean> {
+    const session = await dbGetSession(sessionId);
+    return session ? isStale(session) : true;
 }
 
 export function getCheckpoints(sessionId: string, opts?: { limit?: number; beforeSeq?: number }) {
@@ -277,10 +337,11 @@ export async function getFileContent(sessionId: string, path: string, ref: strin
  * viewer can open files instantly without per-file fetches.
  */
 export async function buildSessionState(sessionId: string) {
-    const session = await dbGetSession(sessionId);
-    if (!session) {
+    const raw = await dbGetSession(sessionId);
+    if (!raw) {
         return null;
     }
+    const session = withLiveness(raw);
 
     const [snapshot, checkpoints, stats] = await Promise.all([
         dbGetSnapshot(sessionId),

@@ -50,6 +50,15 @@ export function getWatcherTiming(env: RuntimeEnv = getRuntimeEnv()): WatcherTimi
     };
 }
 
+/**
+ * How often the CLI pings the server to report the broadcast is still live.
+ * Must stay comfortably below the server's staleness window so a single dropped
+ * heartbeat never makes a live session look ended. Configurable for slow links.
+ */
+export function getHeartbeatIntervalMs(env: RuntimeEnv = getRuntimeEnv()): number {
+    return positiveIntEnv(env.SPIRE_HEARTBEAT_MS, 10_000);
+}
+
 export function getSpireDataDir(): string {
     return path.join(homedir(), ".spire");
 }
