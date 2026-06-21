@@ -1,6 +1,6 @@
 {
   "name": "@zenshilabs/spire",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Broadcast a local directory so others can watch it live in real time — no accounts, the session ID is the share link.",
   "keywords": [
     "spire",
