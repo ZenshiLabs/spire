@@ -1,0 +1,59 @@
+name: Release
+
+# Publishes @zenshilabs/spire to npm when a GitHub Release is published.
+# The version that ships is whatever is in apps/cli/package.json on the tagged
+# commit, so bump that and commit before creating the Release. `workflow_dispatch`
+# allows a manual re-run from the Actions tab.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Reuse CI's verify gate verbatim — full LTS matrix on this exact commit — so
+  # the release runs identical checks without duplicating them. The publish job
+  # depends on it, so a failure on ANY Node LTS leg blocks the publish.
+  verify:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish to npm
+    # Gate: only runs after every `verify` matrix leg succeeds.
+    needs: verify
+    runs-on: ubuntu-latest
+    # Must match the "Environment name" set on the npm Trusted Publisher. Add
+    # protection rules (required reviewers, branch/tag limits) on this GitHub
+    # Environment to gate the publish.
+    environment: release
+    permissions:
+      contents: read
+      id-token: write # required for OIDC trusted publishing + provenance
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the CLI
+        run: pnpm exec turbo run build --filter=@zenshilabs/spire
+
+      # Tokenless: pnpm (>=10) exchanges the GitHub OIDC token for a short-lived
+      # npm publish token via the configured Trusted Publisher — no NPM_TOKEN.
+      # Provenance is enabled here (CI only) rather than in publishConfig, so a
+      # local `pnpm publish` still works. Both require id-token: write above.
+      - name: Publish
+        run: pnpm --filter @zenshilabs/spire publish --no-git-checks --access public --provenance

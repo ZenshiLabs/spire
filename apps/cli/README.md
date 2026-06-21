@@ -25,34 +25,9 @@ spire stop
 By default the CLI talks to `http://localhost:3000`. Point it at a hosted Spire
 instance by setting `SPIRE_API_URL` (e.g. `SPIRE_API_URL=https://spire.example.com spire start`).
 
-Commands are auto-discovered from `src/commands/*.ts` — add a file that exports a default `CommandModule` and it appears in both the argv parser and the interactive prompt without manual registration.
 
-## Broadcast Lifecycle
-
-```mermaid
-flowchart TD
-    START([spire start]) --> RESOLVE[Resolve session ID\n--session → saved → generated]
-    RESOLVE --> UPSERT[PUT /api/sessions/:id\ncreate or reactivate]
-    UPSERT --> SNAP[Build + upload snapshot\nfull file tree with content]
-    SNAP --> HASHES[Seed HashRegistry\nfrom snapshot hashes]
-    HASHES --> WATCH[Start FileWatcher]
-
-    WATCH --> EVENT[File change event]
-    EVENT --> FILTER{Path accepted\nby gitignore filter?}
-    FILTER -->|No| WATCH
-    FILTER -->|Yes| HASH{Content hash\nchanged?}
-    HASH -->|No| WATCH
-    HASH -->|Yes| BATCH[Queue in CheckpointBatcher]
-    BATCH --> FLUSH{Idle 400ms\nor 2s elapsed?}
-    FLUSH -->|No| BATCH
-    FLUSH -->|Yes| VALIDATE[Validate payload\npath safety + size cap]
-    VALIDATE --> POST[POST /api/sessions/:id/checkpoint]
-    POST --> WATCH
-
-    WATCH --> SIGINT([Ctrl+C / SIGTERM])
-    SIGINT --> DRAIN[Flush pending checkpoint]
-    DRAIN --> END[DELETE /api/sessions/:id]
-```
+> For how the CLI fits together with the web API and browser viewer, see the
+> [architecture overview](https://github.com/ZenshiLabs/spire#architecture).
 
 ## Session ID Resolution
 
@@ -63,25 +38,6 @@ flowchart TD
 3. Freshly generated 8-character base36 ID, then saved for this directory.
 
 Because local files are always the source of truth, every `start` re-uploads a fresh snapshot. Crashes, server restarts, and dropped connections recover by re-running the same command.
-
-## Module Map
-
-| Module | Responsibility |
-|--------|----------------|
-| `src/index.ts` | Entry point, command dispatch, interactive prompt |
-| `src/commands/handler.ts` | Auto-discovery, option parsing, command dispatch |
-| `src/commands/start.ts` | Full broadcast lifecycle |
-| `src/commands/status.ts` | Print session info for the current directory |
-| `src/commands/stop.ts` | Gracefully end a session via the API |
-| `src/api/client.ts` | Typed HTTP client for all session API endpoints |
-| `src/watcher/fs-watcher.ts` | Chokidar-backed recursive file watcher |
-| `src/watcher/checkpoint-batcher.ts` | Idle + max-wait debounce for checkpoint batching |
-| `src/watcher/gitignore-filter.ts` | Path acceptance against `.gitignore` + default excludes |
-| `src/watcher/hash-registry.ts` | SHA-256 per-file hash registry for change detection |
-| `src/watcher/binary.ts` | NUL-byte heuristic for binary file detection |
-| `src/diff/payload-validator.ts` | Path-traversal guard and per-entry size cap |
-| `src/session/local-session.ts` | `~/.spire/sessions.json` read/write |
-| `src/config.ts` | Environment variables, path helpers, size constants |
 
 ## Local State
 

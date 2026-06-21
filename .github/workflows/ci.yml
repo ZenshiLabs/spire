@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Also callable as a reusable workflow so release.yml reuses this exact gate
+  # instead of duplicating the verify job.
+  workflow_call:
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      # Run every Node leg even if one fails, so a single version's failure
+      # doesn't hide the others.
+      fail-fast: false
+      matrix:
+        # Active/maintenance LTS lines only — no Current/odd (experimental) majors.
+        node: [22, 24]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Version comes from the root package.json `packageManager` field, so CI,
+      # release, and local dev all resolve to the same pnpm.
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Scope checks to the published CLI and its workspace dependencies. This is
+      # the exact set of work that gates a release, so the publish workflow can
+      # reuse it verbatim.
+      - name: Lint, type-check, and build the CLI
+        run: pnpm exec turbo run lint check-types build --filter=@zenshilabs/spire
