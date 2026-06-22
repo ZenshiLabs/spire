@@ -5,6 +5,8 @@
 
 :root {
   --radius: 0.625rem;
+  --spire-accent: #2d5bff;
+  --spire-accent-foreground: #ffffff;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -39,6 +41,7 @@
 }
 
 .dark {
+  --spire-accent: #4f78ff;
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -75,6 +78,8 @@
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --color-spire: var(--spire-accent);
+  --color-spire-foreground: var(--spire-accent-foreground);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -118,5 +123,91 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+/* ---- Landing page: brand grid, glow, live caret, entrance motion ---- */
+@layer utilities {
+  /* Faint blueprint grid that fades out at the edges. */
+  .spire-grid {
+    background-image:
+      linear-gradient(
+        to right,
+        color-mix(in oklab, var(--foreground) 7%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in oklab, var(--foreground) 7%, transparent) 1px,
+        transparent 1px
+      );
+    background-size: 46px 46px;
+    -webkit-mask-image: radial-gradient(
+      ellipse 75% 60% at 50% 0%,
+      #000 35%,
+      transparent 100%
+    );
+    mask-image: radial-gradient(
+      ellipse 75% 60% at 50% 0%,
+      #000 35%,
+      transparent 100%
+    );
+  }
+
+  /* Electric blue bloom behind the hero. */
+  .spire-bloom {
+    background: radial-gradient(
+      60% 50% at 50% 0%,
+      color-mix(in oklab, var(--spire-accent) 32%, transparent),
+      transparent 70%
+    );
+  }
+
+  /* Block caret that trails the "currently typing" line. */
+  .spire-caret-el {
+    display: inline-block;
+    width: 0.55ch;
+    height: 1.05em;
+    margin-left: 1px;
+    transform: translateY(0.16em);
+    background: var(--spire-accent);
+    border-radius: 1px;
+    animation: spire-caret 1.05s steps(1) infinite;
+  }
+
+  .spire-rise {
+    animation: spire-rise 0.75s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+
+@keyframes spire-caret {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes spire-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spire-rise {
+    animation: none;
+  }
+  .spire-caret-el {
+    animation: none;
+    opacity: 1;
   }
 }

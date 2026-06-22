@@ -15,9 +15,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Spire",
+  title: "Spire — Live code sharing without a screen share",
   description:
-    "Live code sharing — share a session link and watch code update in real time.",
+    "Broadcast the files you're working on to a browser tab. Run one command, share the link, and anyone can follow along as you save — read-only, syntax-highlighted, no account or install.",
 };
 
 export default function RootLayout({
