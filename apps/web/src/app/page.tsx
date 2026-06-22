@@ -54,20 +54,39 @@ function SiteHeader() {
         </Link>
 
         <nav className="ml-6 hidden items-center gap-1 text-sm text-muted-foreground md:flex">
-          <a className="rounded-md px-3 py-2 transition-colors hover:text-foreground" href="#why">
+          <a
+            className="rounded-md px-3 py-2 transition-colors hover:text-foreground"
+            href="#why"
+          >
             Why Spire
           </a>
-          <a className="rounded-md px-3 py-2 transition-colors hover:text-foreground" href="#who">
+          <a
+            className="rounded-md px-3 py-2 transition-colors hover:text-foreground"
+            href="#who"
+          >
             Who it&rsquo;s for
           </a>
-          <a className="rounded-md px-3 py-2 transition-colors hover:text-foreground" href="#how">
+          <a
+            className="rounded-md px-3 py-2 transition-colors hover:text-foreground"
+            href="#how"
+          >
             How it works
           </a>
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
-          <Button asChild variant="ghost" size="icon" className="hidden sm:inline-flex">
-            <a href={GITHUB_URL} target="_blank" rel="noreferrer" aria-label="Spire on GitHub">
+          <Button
+            asChild
+            variant="ghost"
+            size="icon"
+            className="hidden sm:inline-flex"
+          >
+            <a
+              href={GITHUB_URL}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Spire on GitHub"
+            >
               <GitHubGlyph />
             </a>
           </Button>
@@ -170,7 +189,9 @@ function BroadcastPreview() {
           <span className="size-3 rounded-full bg-[#febc2e]" />
           <span className="size-3 rounded-full bg-[#28c840]" />
         </div>
-        <span className="ml-1 text-xs text-zinc-500">spire &mdash; broadcasting</span>
+        <span className="ml-1 text-xs text-zinc-500">
+          spire &mdash; broadcasting
+        </span>
         <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-spire/30 bg-spire/15 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-spire">
           <span className="relative flex size-2">
             <span className="absolute inline-flex size-full animate-ping rounded-full bg-spire opacity-75" />
@@ -181,7 +202,10 @@ function BroadcastPreview() {
       </div>
 
       {/* Body */}
-      <div aria-hidden className="space-y-1 overflow-x-auto px-4 py-4 whitespace-nowrap">
+      <div
+        aria-hidden
+        className="space-y-1 overflow-x-auto px-4 py-4 whitespace-nowrap"
+      >
         <div>
           <span className="text-spire">$</span>{" "}
           <span className="text-zinc-200">npx spire start</span>
@@ -197,7 +221,9 @@ function BroadcastPreview() {
           Share with viewers:{" "}
           <span className="text-spire">…/session/k3f9zq2a</span>
         </div>
-        <div className="text-zinc-500">Watching for changes. Ctrl+C to stop.</div>
+        <div className="text-zinc-500">
+          Watching for changes. Ctrl+C to stop.
+        </div>
         <div className="pt-1 text-zinc-400">
           <span className="text-zinc-600">·</span> Synced checkpoint{" "}
           <span className="text-zinc-300">#1</span>{" "}
@@ -233,7 +259,10 @@ const PROBLEMS = [
 
 function Problem() {
   return (
-    <section id="why" className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 sm:py-20 lg:py-28">
+    <section
+      id="why"
+      className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 sm:py-20 lg:py-28"
+    >
       <div className="max-w-2xl">
         <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl text-balance">
           Showing your code as you work is clumsy
@@ -264,8 +293,11 @@ function Problem() {
       </div>
 
       <p className="mt-8 max-w-2xl text-base text-pretty sm:text-lg">
-        Spire sits in between: a <span className="font-medium">live, read-only
-        view of your actual files</span>, shared with a link.
+        Spire sits in between: a{" "}
+        <span className="font-medium">
+          live, read-only view of your actual files
+        </span>
+        , shared with a link.
       </p>
     </section>
   );
@@ -350,7 +382,10 @@ const STEPS = [
 
 function HowItWorks() {
   return (
-    <section id="how" className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 sm:py-20 lg:py-28">
+    <section
+      id="how"
+      className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 sm:py-20 lg:py-28"
+    >
       <div className="max-w-2xl">
         <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl text-balance">
           From your terminal to their screen
@@ -379,7 +414,9 @@ function HowItWorks() {
             <h3 className="mt-5 text-lg font-semibold tracking-tight">
               {step.title}
             </h3>
-            <p className="mt-2 text-muted-foreground text-pretty">{step.body}</p>
+            <p className="mt-2 text-muted-foreground text-pretty">
+              {step.body}
+            </p>
           </li>
         ))}
       </ol>
@@ -413,10 +450,10 @@ function Features() {
               Changed files, not screens
             </h3>
             <p className="mt-2 max-w-md text-muted-foreground text-pretty">
-              Each save uploads only the files that changed, addressed by content
-              hash and deduplicated &mdash; re-saving a file to an earlier state
-              costs nothing. Viewers get the update a moment after you save, with
-              no video and no whole-desktop capture.
+              Each save uploads only the files that changed, addressed by
+              content hash and deduplicated &mdash; re-saving a file to an
+              earlier state costs nothing. Viewers get the update a moment after
+              you save, with no video and no whole-desktop capture.
             </p>
           </div>
 
@@ -502,7 +539,10 @@ function Feature({
 
 function WatchSection() {
   return (
-    <section id="watch" className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 sm:py-20 lg:py-24">
+    <section
+      id="watch"
+      className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 sm:py-20 lg:py-24"
+    >
       <div className="grid items-center gap-8 rounded-2xl border border-border bg-card/50 p-6 sm:p-8 md:grid-cols-2 md:p-12">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl text-balance">
@@ -524,7 +564,7 @@ function WatchSection() {
             <TerminalIcon className="size-3.5 shrink-0" />
             Broadcasting instead? Run{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 font-mono">
-              npx spire start
+              npx @zenshilabs/spire start
             </code>
           </p>
         </div>
@@ -548,8 +588,8 @@ function ClosingCta() {
             Show your work in the open.
           </h2>
           <p className="mt-4 text-base text-zinc-400 text-pretty sm:text-lg">
-            Run a workshop, mentor across timezones, or just let people watch you
-            build. One command starts a session; a link lets anyone follow.
+            Run a workshop, mentor across timezones, or just let people watch
+            you build. One command starts a session; a link lets anyone follow.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <CopyCommand command="npx spire start" />
@@ -607,7 +647,6 @@ function SiteFooter() {
     </footer>
   );
 }
-
 
 function GitHubGlyph({ className }: { className?: string }) {
   return (
