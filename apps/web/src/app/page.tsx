@@ -134,7 +134,7 @@ function Hero() {
           </p>
 
           <div id="start" className="mt-8 flex flex-wrap items-center gap-3">
-            <CopyCommand command="npx spire start" />
+            <CopyCommand command="npx @zenshilabs/spire start" />
             <Button asChild variant="outline" size="lg" className="h-[46px]">
               <a href="#watch">
                 <EyeIcon /> Watch a session
@@ -208,7 +208,7 @@ function BroadcastPreview() {
       >
         <div>
           <span className="text-spire">$</span>{" "}
-          <span className="text-zinc-200">npx spire start</span>
+          <span className="text-zinc-200">npx @zenshilabs/spire start</span>
         </div>
         <div className="text-emerald-400">
           <span className="text-emerald-500">✓</span> Initial snapshot uploaded
@@ -592,7 +592,7 @@ function ClosingCta() {
             you build. One command starts a session; a link lets anyone follow.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <CopyCommand command="npx spire start" />
+            <CopyCommand command="npx @zenshilabs/spire start" />
             <Button
               asChild
               size="lg"
