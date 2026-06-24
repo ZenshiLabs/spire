@@ -5,7 +5,7 @@ import type { FileNode } from "@spire/types";
 import { useEditorStore } from "@spire/stores/editor-store";
 import { useFileTreeStore } from "@spire/stores/file-tree-store";
 import { ChevronRight, ClockIcon, CopyIcon, DownloadIcon } from "lucide-react";
-import { useRef } from "react";
+import { memo, useRef } from "react";
 
 import { FileTypeIcon } from "@/components/file-icon";
 import {
@@ -15,6 +15,7 @@ import {
     ContextMenuSeparator,
     ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { Button } from "@/components/ui/button";
 import { CHANGE_META } from "@/lib/change-meta";
 import { copyText, downloadText } from "@/lib/file-actions";
 import { fetchFileContent } from "@/lib/session-api";
@@ -43,7 +44,7 @@ async function withContent(
     }
 }
 
-function DirectoryRow({
+const DirectoryRow = memo(function DirectoryRow({
     node,
     depth,
     expanded,
@@ -52,7 +53,7 @@ function DirectoryRow({
     node: FileNode;
     depth: number;
     expanded: boolean;
-    onToggle: () => void;
+    onToggle: (path: string) => void;
 }) {
     const indent = { paddingLeft: `${depth * 12 + 6}px` };
 
@@ -71,11 +72,11 @@ function DirectoryRow({
     }
 
     return (
-        <button
-            type="button"
-            onClick={onToggle}
+        <Button
+            variant="ghost"
             aria-expanded={expanded}
-            className="hover:bg-sidebar-accent flex h-full w-full items-center gap-1.5 pr-2 text-sm"
+            onClick={() => onToggle(node.path)}
+            className="hover:bg-sidebar-accent h-full w-full justify-start gap-1.5 rounded-none pr-2 text-sm"
             style={indent}
         >
             <ChevronRight
@@ -91,11 +92,11 @@ function DirectoryRow({
                 className="size-4"
             />
             <span className="truncate">{node.name}</span>
-        </button>
+        </Button>
     );
-}
+});
 
-function FileRow({
+const FileRow = memo(function FileRow({
     node,
     depth,
     sessionId,
@@ -137,10 +138,10 @@ function FileRow({
                     }}
                 >
                     <span className="size-3.5 shrink-0" />
-                    <button
-                        type="button"
+                    <Button
+                        variant="ghost"
                         onClick={open}
-                        className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                        className="min-w-0 flex-1 justify-start gap-1.5 h-full rounded-none px-0 text-sm hover:bg-transparent"
                     >
                         <FileTypeIcon kind="file" name={node.name} className="size-4" />
                         <span
@@ -151,12 +152,13 @@ function FileRow({
                         >
                             {node.name}
                         </span>
-                    </button>
+                    </Button>
                     <div className="flex shrink-0 items-center gap-0.5">
-                        <button
-                            type="button"
+                        <Button
+                            variant="ghost"
+                            size="icon"
                             aria-label="Download file"
-                            className="hover:bg-background/80 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100"
+                            className="size-5 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100"
                             onClick={() =>
                                 withContent(sessionId, node.path, (content) =>
                                     downloadText(node.path, content)
@@ -164,7 +166,7 @@ function FileRow({
                             }
                         >
                             <DownloadIcon className="size-3.5" />
-                        </button>
+                        </Button>
                         {decoration && (
                             <span
                                 className={cn(
@@ -210,7 +212,7 @@ function FileRow({
             </ContextMenuContent>
         </ContextMenu>
     );
-}
+});
 
 export function FileTree({
     sessionId,
@@ -267,7 +269,7 @@ export function FileTree({
                                             node={node}
                                             depth={depth}
                                             expanded={expandedPaths.has(node.path)}
-                                            onToggle={() => toggleExpanded(node.path)}
+                                            onToggle={toggleExpanded}
                                         />
                                     ) : (
                                         <FileRow

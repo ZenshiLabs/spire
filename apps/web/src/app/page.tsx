@@ -54,24 +54,15 @@ function SiteHeader() {
         </Link>
 
         <nav className="ml-6 hidden items-center gap-1 text-sm text-muted-foreground md:flex">
-          <a
-            className="rounded-md px-3 py-2 transition-colors hover:text-foreground"
-            href="#why"
-          >
-            Why Spire
-          </a>
-          <a
-            className="rounded-md px-3 py-2 transition-colors hover:text-foreground"
-            href="#who"
-          >
-            Who it&rsquo;s for
-          </a>
-          <a
-            className="rounded-md px-3 py-2 transition-colors hover:text-foreground"
-            href="#how"
-          >
-            How it works
-          </a>
+          <Button variant="ghost" size="sm" asChild>
+              <a href="#why">Why Spire</a>
+          </Button>
+          <Button variant="ghost" size="sm" asChild>
+              <a href="#who">Who it&rsquo;s for</a>
+          </Button>
+          <Button variant="ghost" size="sm" asChild>
+              <a href="#how">How it works</a>
+          </Button>
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
@@ -173,7 +164,7 @@ function Stat({ label }: { label: string }) {
  */
 function BroadcastPreview() {
   return (
-    <figure className="overflow-hidden rounded-xl border border-white/10 bg-[#0d1014] font-mono text-[12.5px] leading-relaxed shadow-2xl shadow-black/40 ring-1 ring-black/5 sm:text-[13px]">
+    <figure className="overflow-hidden rounded-xl border border-terminal-foreground/10 bg-terminal font-mono text-[12.5px] leading-relaxed shadow-2xl shadow-black/40 ring-1 ring-black/5 sm:text-[13px]">
       <figcaption className="sr-only">
         Terminal output from running spire start: an uploaded snapshot, a share
         link, and a log of synced checkpoints.
@@ -182,12 +173,12 @@ function BroadcastPreview() {
       {/* Title bar */}
       <div
         aria-hidden
-        className="flex items-center gap-3 border-b border-white/10 bg-white/[0.03] px-4 py-3"
+        className="flex items-center gap-3 border-b border-terminal-foreground/10 bg-terminal-foreground/[0.03] px-4 py-3"
       >
         <div className="flex items-center gap-1.5">
-          <span className="size-3 rounded-full bg-[#ff5f57]" />
-          <span className="size-3 rounded-full bg-[#febc2e]" />
-          <span className="size-3 rounded-full bg-[#28c840]" />
+          <span className="size-3 rounded-full bg-macos-close" />
+          <span className="size-3 rounded-full bg-macos-minimize" />
+          <span className="size-3 rounded-full bg-macos-maximize" />
         </div>
         <span className="ml-1 text-xs text-zinc-500">
           spire &mdash; broadcasting
@@ -457,7 +448,7 @@ function Features() {
             </p>
           </div>
 
-          <div className="mt-6 w-fit rounded-xl border border-white/10 bg-[#0d1014] px-4 py-3 font-mono text-xs leading-relaxed text-zinc-400 shadow-sm">
+          <div className="mt-6 w-fit rounded-xl border border-terminal-foreground/10 bg-terminal px-4 py-3 font-mono text-xs leading-relaxed text-terminal-foreground/60 shadow-sm">
             <div>
               <span className="text-zinc-600">·</span> Synced checkpoint{" "}
               <span className="text-zinc-300">#11</span>{" "}
@@ -576,7 +567,7 @@ function WatchSection() {
 function ClosingCta() {
   return (
     <section className="mx-auto w-full max-w-6xl px-4 pb-20 sm:px-6 sm:pb-24">
-      <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#0b0e13] px-6 py-16 text-center sm:py-20">
+      <div className="relative overflow-hidden rounded-3xl border border-terminal-foreground/10 bg-terminal px-6 py-16 text-center sm:py-20">
         <div aria-hidden className="pointer-events-none absolute inset-0">
           <div className="absolute inset-0 spire-grid opacity-60" />
           <div className="absolute inset-x-0 -top-24 h-64 spire-bloom" />
@@ -622,24 +613,21 @@ function SiteFooter() {
         </div>
 
         <nav className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
-          <a className="transition-colors hover:text-foreground" href="#why">
-            Why Spire
-          </a>
-          <a className="transition-colors hover:text-foreground" href="#who">
-            Who it&rsquo;s for
-          </a>
-          <a className="transition-colors hover:text-foreground" href="#how">
-            How it works
-          </a>
-          <a
-            className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
-            href={GITHUB_URL}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <GitHubGlyph className="size-4" />
-            GitHub
-          </a>
+          <Button variant="ghost" size="sm" className="h-auto px-0 text-muted-foreground hover:bg-transparent hover:text-foreground" asChild>
+            <a href="#why">Why Spire</a>
+          </Button>
+          <Button variant="ghost" size="sm" className="h-auto px-0 text-muted-foreground hover:bg-transparent hover:text-foreground" asChild>
+            <a href="#who">Who it&rsquo;s for</a>
+          </Button>
+          <Button variant="ghost" size="sm" className="h-auto px-0 text-muted-foreground hover:bg-transparent hover:text-foreground" asChild>
+            <a href="#how">How it works</a>
+          </Button>
+          <Button variant="ghost" size="sm" className="h-auto gap-1.5 px-0 text-muted-foreground hover:bg-transparent hover:text-foreground" asChild>
+            <a href={GITHUB_URL} target="_blank" rel="noreferrer">
+              <GitHubGlyph className="size-4" />
+              GitHub
+            </a>
+          </Button>
         </nav>
 
         <p className="text-sm text-muted-foreground">© 2026 Spire</p>

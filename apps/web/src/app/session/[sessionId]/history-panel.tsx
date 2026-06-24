@@ -1,24 +1,18 @@
 "use client";
 
-import { baseName, type ChangeType, type CheckpointChange } from "@spire/types";
+import { baseName, type CheckpointChange } from "@spire/types";
 import { useFileTreeStore } from "@spire/stores/file-tree-store";
 import { useHistoryStore } from "@spire/stores/history-store";
 import { ArrowUpIcon } from "lucide-react";
 
 import { FileTypeIcon } from "@/components/file-icon";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CHANGE_META, dirName, formatRelativeTime } from "@/lib/change-meta";
 import { fetchCheckpoint } from "@/lib/session-api";
+import { decorationsFromChanges } from "@/lib/use-session-stream";
 import { cn } from "@/lib/utils";
-
-function decorationsFromChanges(changes: CheckpointChange[]): Map<string, ChangeType> {
-    const map = new Map<string, ChangeType>();
-    for (const change of changes) {
-        map.set(change.path, change.changeType);
-    }
-    return map;
-}
 
 export function HistoryPanel({
     sessionId,
@@ -74,14 +68,14 @@ export function HistoryPanel({
             </div>
 
             {newWhileBrowsing > 0 && (
-                <button
-                    type="button"
+                <Button
+                    variant="ghost"
                     onClick={jumpToLatest}
-                    className="bg-primary/10 text-primary hover:bg-primary/15 flex shrink-0 items-center justify-center gap-1.5 border-y py-1.5 text-xs font-medium"
+                    className="bg-primary/10 text-primary hover:bg-primary/15 h-auto w-full justify-center gap-1.5 rounded-none border-y py-1.5 text-xs font-medium"
                 >
                     <ArrowUpIcon className="size-3.5" />
                     {newWhileBrowsing} new change{newWhileBrowsing > 1 ? "s" : ""} — jump to latest
-                </button>
+                </Button>
             )}
 
             {checkpoints.length === 0 ? (
@@ -95,11 +89,11 @@ export function HistoryPanel({
                             const selected = selectedSeq === checkpoint.seq;
                             return (
                                 <li key={checkpoint.seq} className="border-b">
-                                    <button
-                                        type="button"
+                                    <Button
+                                        variant="ghost"
                                         onClick={() => void onSelect(checkpoint.seq)}
                                         className={cn(
-                                            "hover:bg-accent/50 flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors",
+                                            "hover:bg-accent/50 h-auto w-full flex-col items-start gap-0.5 rounded-none px-3 py-2 transition-colors",
                                             selected && "bg-accent/60"
                                         )}
                                     >
@@ -127,7 +121,7 @@ export function HistoryPanel({
                                                 </span>
                                             )}
                                         </div>
-                                    </button>
+                                    </Button>
 
                                     {selected && (
                                         <div className="border-t">
@@ -139,13 +133,14 @@ export function HistoryPanel({
                                                 selectedCheckpoint.changes.map((change) => {
                                                     const meta = CHANGE_META[change.changeType];
                                                     const active = selectedChange?.path === change.path;
+                                                    const dir = dirName(change.path);
                                                     return (
-                                                        <button
+                                                        <Button
                                                             key={change.path}
-                                                            type="button"
+                                                            variant="ghost"
                                                             onClick={() => onSelectChange(change)}
                                                             className={cn(
-                                                                "hover:bg-accent/50 flex w-full items-center gap-1.5 py-1 pr-2 pl-6 text-left text-xs transition-colors",
+                                                                "hover:bg-accent/50 h-auto w-full items-center justify-start gap-1.5 rounded-none py-1 pr-2 pl-6 text-xs transition-colors",
                                                                 active && "bg-accent/70"
                                                             )}
                                                         >
@@ -157,9 +152,9 @@ export function HistoryPanel({
                                                             <span className="truncate">
                                                                 {baseName(change.path)}
                                                             </span>
-                                                            {dirName(change.path) && (
+                                                            {dir && (
                                                                 <span className="text-muted-foreground/70 truncate text-[10px]">
-                                                                    {dirName(change.path)}
+                                                                    {dir}
                                                                 </span>
                                                             )}
                                                             <span className="ml-auto flex shrink-0 items-center gap-1 font-mono text-[10px]">
@@ -177,7 +172,7 @@ export function HistoryPanel({
                                                                     {meta.letter}
                                                                 </span>
                                                             </span>
-                                                        </button>
+                                                        </Button>
                                                     );
                                                 })
                                             )}

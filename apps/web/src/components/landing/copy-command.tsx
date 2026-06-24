@@ -3,6 +3,7 @@
 import { CheckIcon, CopyIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 type CopyCommandProps = {
@@ -26,8 +27,8 @@ export function CopyCommand({ command, className }: CopyCommandProps) {
   }, [copied]);
 
   return (
-    <button
-      type="button"
+    <Button
+      variant="outline"
       onClick={() => {
         navigator.clipboard?.writeText(command).then(
           () => setCopied(true),
@@ -36,7 +37,7 @@ export function CopyCommand({ command, className }: CopyCommandProps) {
       }}
       aria-label={`Copy command: ${command}`}
       className={cn(
-        "group inline-flex items-center gap-3 rounded-lg border border-white/10 bg-[#0e1116] py-2.5 pr-2.5 pl-4 font-mono text-sm text-zinc-200 shadow-sm transition-colors hover:border-spire/60 focus-visible:ring-spire/50 focus-visible:ring-[3px] focus-visible:outline-none",
+        "group h-auto gap-3 rounded-lg border-terminal-foreground/10 bg-terminal py-2.5 pr-2.5 pl-4 font-mono text-sm text-terminal-foreground shadow-sm hover:bg-terminal hover:text-terminal-foreground hover:border-spire/60 focus-visible:ring-spire/50 focus-visible:ring-[3px]",
         className
       )}
     >
@@ -44,7 +45,7 @@ export function CopyCommand({ command, className }: CopyCommandProps) {
         $
       </span>
       <span className="tracking-tight">{command}</span>
-      <span className="ml-1 grid size-7 place-items-center rounded-md border border-white/10 bg-white/5 text-zinc-400 transition-colors group-hover:text-zinc-100">
+      <span className="ml-1 grid size-7 place-items-center rounded-md border border-terminal-foreground/10 bg-terminal-foreground/5 text-terminal-foreground/60 transition-colors group-hover:text-terminal-foreground">
         {copied ? (
           <CheckIcon className="size-3.5 text-spire" />
         ) : (
@@ -54,6 +55,6 @@ export function CopyCommand({ command, className }: CopyCommandProps) {
       <span aria-live="polite" className="sr-only">
         {copied ? "Copied" : ""}
       </span>
-    </button>
+    </Button>
   );
 }

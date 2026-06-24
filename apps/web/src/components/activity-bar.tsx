@@ -8,6 +8,7 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export type ActivityView = "explorer" | "timeline";
@@ -35,15 +36,15 @@ export function ActivityBar({
                     return (
                         <Tooltip key={itemView}>
                             <TooltipTrigger asChild>
-                                <button
-                                    type="button"
+                                <Button
+                                    variant="ghost"
                                     aria-label={label}
                                     aria-pressed={active}
                                     onClick={() => onChange(itemView)}
                                     className={cn(
-                                        "relative flex size-10 items-center justify-center rounded-md transition-colors",
+                                        "relative size-10",
                                         active
-                                            ? "text-foreground"
+                                            ? "text-foreground hover:text-foreground"
                                             : "text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
                                     )}
                                 >
@@ -51,7 +52,7 @@ export function ActivityBar({
                                         <span className="bg-primary absolute top-1/2 left-0 h-5 w-0.5 -translate-y-1/2 rounded-r" />
                                     )}
                                     <Icon className="size-5" />
-                                </button>
+                                </Button>
                             </TooltipTrigger>
                             <TooltipContent side="right">{label}</TooltipContent>
                         </Tooltip>
