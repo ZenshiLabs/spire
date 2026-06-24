@@ -1,6 +1,7 @@
 import { CreateSessionSchema } from "@spire/types";
+import { endSession, getSessionById, upsertSession } from "@spire/server";
 import { failure, readJsonBody, routeHandler, success } from "@/server/http";
-import { endSession, getSessionById, upsertSession } from "@/server/state";
+import { run } from "@/server/runtime";
 
 type RouteContext = {
     params: { sessionId: string } | Promise<{ sessionId: string }>;
@@ -8,7 +9,7 @@ type RouteContext = {
 
 export const GET = routeHandler(async (_request: Request, context: RouteContext) => {
     const { sessionId } = await Promise.resolve(context.params);
-    const session = await getSessionById(sessionId);
+    const session = await run(getSessionById(sessionId));
 
     if (!session) {
         return failure("not_found", "Session was not found.", 404);
@@ -30,13 +31,13 @@ export const PUT = routeHandler(async (request: Request, context: RouteContext) 
         });
     }
 
-    const session = await upsertSession(sessionId, parsed.data);
+    const session = await run(upsertSession(sessionId, parsed.data));
     return success(session);
 });
 
 export const DELETE = routeHandler(async (_request: Request, context: RouteContext) => {
     const { sessionId } = await Promise.resolve(context.params);
-    const result = await endSession(sessionId);
+    const result = await run(endSession(sessionId));
 
     if (!result.ok) {
         if (result.code === "not_found") {

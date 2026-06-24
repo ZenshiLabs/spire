@@ -1,6 +1,7 @@
 import { FileSnapshotSchema } from "@spire/types";
+import { ingestSnapshot } from "@spire/server";
 import { failure, readJsonBody, routeHandler, success } from "@/server/http";
-import { ingestSnapshot } from "@/server/state";
+import { run } from "@/server/runtime";
 
 type RouteContext = {
     params: { sessionId: string } | Promise<{ sessionId: string }>;
@@ -23,7 +24,7 @@ export const POST = routeHandler(async (request: Request, context: RouteContext)
         return failure("invalid_request", "Payload sessionId does not match route param.", 400);
     }
 
-    const result = await ingestSnapshot(parsed.data);
+    const result = await run(ingestSnapshot(parsed.data));
 
     if (!result.ok) {
         if (result.code === "not_found") {

@@ -1,5 +1,6 @@
+import { Effect } from "effect";
+import { getCheckpoint } from "@spire/server";
 import { failure, routeHandler, success } from "@/server/http";
-import { getCheckpoint } from "@/server/state";
 
 type RouteContext = {
     params:
@@ -16,7 +17,7 @@ export const GET = routeHandler(async (_request: Request, context: RouteContext)
         return failure("invalid_request", "Invalid checkpoint seq.", 400);
     }
 
-    const checkpoint = await getCheckpoint(sessionId, seqNum);
+    const checkpoint = await Effect.runPromise(getCheckpoint(sessionId, seqNum));
     if (!checkpoint) {
         return failure("not_found", "Checkpoint was not found.", 404);
     }

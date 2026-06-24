@@ -20,6 +20,14 @@
       "dependsOn": ["@spire/types#build"],
       "outputs": ["dist/**"]
     },
+    "@spire/redis#build": {
+      "dependsOn": ["@spire/types#build"],
+      "outputs": ["dist/**"]
+    },
+    "@spire/server#build": {
+      "dependsOn": ["@spire/db#build", "@spire/redis#build", "@spire/types#build"],
+      "outputs": ["dist/**"]
+    },
     "@zenshilabs/spire#build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**"],
@@ -37,7 +45,9 @@
       "dependsOn": [
         "@spire/types#build",
         "@spire/stores#build",
-        "@spire/db#build"
+        "@spire/db#build",
+        "@spire/redis#build",
+        "@spire/server#build"
       ]
     }
   }

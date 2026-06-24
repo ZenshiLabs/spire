@@ -1,6 +1,7 @@
 import { HASH_RE } from "@spire/types";
+import { getFileContent } from "@spire/server";
 import { failure, routeHandler, success } from "@/server/http";
-import { getFileContent } from "@/server/state";
+import { run } from "@/server/runtime";
 
 type RouteContext = {
     params: { sessionId: string } | Promise<{ sessionId: string }>;
@@ -20,7 +21,7 @@ export const GET = routeHandler(async (request: Request, context: RouteContext) 
         return failure("invalid_request", "Missing 'path' query parameter.", 400);
     }
 
-    const result = await getFileContent(sessionId, path, ref);
+    const result = await run(getFileContent(sessionId, path, ref));
     if (!result) {
         return failure("not_found", "File version was not found.", 404);
     }

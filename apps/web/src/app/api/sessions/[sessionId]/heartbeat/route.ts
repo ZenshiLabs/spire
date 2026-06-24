@@ -1,5 +1,6 @@
+import { Effect } from "effect";
+import { touchSession } from "@spire/server";
 import { failure, routeHandler } from "@/server/http";
-import { touchSession } from "@/server/state";
 
 type RouteContext = {
     params: { sessionId: string } | Promise<{ sessionId: string }>;
@@ -12,7 +13,7 @@ type RouteContext = {
  */
 export const POST = routeHandler(async (_request: Request, context: RouteContext) => {
     const { sessionId } = await Promise.resolve(context.params);
-    const touched = await touchSession(sessionId);
+    const touched = await Effect.runPromise(touchSession(sessionId));
 
     if (!touched) {
         return failure("not_found", "Session was not found.", 404);

@@ -1,6 +1,7 @@
 import { CheckpointUploadSchema } from "@spire/types";
+import { ingestCheckpoint } from "@spire/server";
 import { failure, readJsonBody, routeHandler, success } from "@/server/http";
-import { ingestCheckpoint } from "@/server/state";
+import { run } from "@/server/runtime";
 
 type RouteContext = {
     params: { sessionId: string } | Promise<{ sessionId: string }>;
@@ -27,7 +28,7 @@ export const POST = routeHandler(async (request: Request, context: RouteContext)
         );
     }
 
-    const result = await ingestCheckpoint(parsed.data);
+    const result = await run(ingestCheckpoint(parsed.data));
 
     if (!result.ok) {
         if (result.code === "not_found") {

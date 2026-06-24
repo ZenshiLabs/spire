@@ -2,7 +2,7 @@
 const nextConfig = {
     // ioredis is a native-ish server dependency — keep it external so it is
     // required at runtime rather than bundled into the server build.
-    serverExternalPackages: ["ioredis"],
+    serverExternalPackages: ["ioredis", "@spire/redis", "@spire/server"],
 };
 
 export default nextConfig;

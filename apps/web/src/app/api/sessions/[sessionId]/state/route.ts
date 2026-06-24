@@ -1,5 +1,6 @@
+import { buildSessionState } from "@spire/server";
 import { failure, routeHandler, success } from "@/server/http";
-import { buildSessionState } from "@/server/state";
+import { run } from "@/server/runtime";
 
 type RouteContext = {
     params: { sessionId: string } | Promise<{ sessionId: string }>;
@@ -7,7 +8,7 @@ type RouteContext = {
 
 export const GET = routeHandler(async (_request: Request, context: RouteContext) => {
     const { sessionId } = await Promise.resolve(context.params);
-    const state = await buildSessionState(sessionId);
+    const state = await run(buildSessionState(sessionId));
 
     if (!state) {
         return failure("not_found", "Session was not found.", 404);

@@ -1,11 +1,13 @@
-import { failure, routeHandler } from "@/server/http";
+import { Effect } from "effect";
 import {
     buildConnectedEvent,
     getSessionById,
     isSessionStale,
     subscribeToSession,
-} from "@/server/state";
+} from "@spire/server";
 import type { SSEEvent } from "@spire/types";
+import { failure, routeHandler } from "@/server/http";
+import { run } from "@/server/runtime";
 
 /**
  * The SSE stream is long-lived and holds a per-instance subscriber, so it must
@@ -24,7 +26,7 @@ function encodeSSEData(event: SSEEvent) {
 
 export const GET = routeHandler(async (_request: Request, context: RouteContext) => {
     const { sessionId } = await Promise.resolve(context.params);
-    const session = await getSessionById(sessionId);
+    const session = await run(getSessionById(sessionId));
 
     if (!session) {
         return failure("not_found", "Session was not found.", 404);
@@ -46,29 +48,22 @@ export const GET = routeHandler(async (_request: Request, context: RouteContext)
     };
 
     const stream = new ReadableStream<Uint8Array>({
-        start(controller) {
+        async start(controller) {
             const encoder = new TextEncoder();
             controller.enqueue(encoder.encode(encodeSSEData(buildConnectedEvent(sessionId))));
 
-            /**
-             * The initial snapshot, content, and checkpoint history are served by the
-             * sibling `/state` endpoint. This stream carries only live events emitted
-             * after the viewer has already loaded that initial payload.
-             */
-            unsubscribe = subscribeToSession(sessionId, (event) => {
-                controller.enqueue(encoder.encode(encodeSSEData(event)));
-            });
+            unsubscribe = await run(
+                subscribeToSession(sessionId, (event) => {
+                    controller.enqueue(encoder.encode(encodeSSEData(event)));
+                })
+            );
 
-            /**
-             * Keepalive doubles as a liveness probe. A clean `spire stop` already
-             * fans out a `session_ended` event, but an abrupt CLI exit (closed
-             * terminal, crash, lost network) sends nothing — so on each tick we
-             * also check whether the broadcast has gone stale and, if so, tell
-             * this already-connected viewer the session ended and close.
-             */
             const tick = async () => {
                 try {
-                    if (await isSessionStale(sessionId)) {
+                    const stale = await Effect.runPromise(
+                        isSessionStale(sessionId).pipe(Effect.orElseSucceed(() => true))
+                    );
+                    if (stale) {
                         controller.enqueue(
                             encoder.encode(
                                 encodeSSEData({
@@ -82,11 +77,8 @@ export const GET = routeHandler(async (_request: Request, context: RouteContext)
                         controller.close();
                         return;
                     }
-                    controller.enqueue(
-                        encoder.encode(`: keepalive ${Date.now()}\n\n`)
-                    );
+                    controller.enqueue(encoder.encode(`: keepalive ${Date.now()}\n\n`));
                 } catch {
-                    // The stream was already torn down (viewer disconnected).
                     cleanup();
                 }
             };
