@@ -1,6 +1,4 @@
 import { create } from "zustand";
-import type { ChangeType, CheckpointChange, FileNode } from "@spire/types";
-
 import {
     baseName,
     flattenTree,
@@ -8,8 +6,11 @@ import {
     insertFile,
     removeFile,
     sortTree,
+    type ChangeType,
+    type CheckpointChange,
+    type FileNode,
     type FlatNode,
-} from "./tree-utils.js";
+} from "@spire/types";
 
 /** Current content hash and binary flag for a given file path. */
 export type HeadMeta = { hash: string; binary: boolean };

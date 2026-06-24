@@ -1,4 +1,4 @@
-import { baseName } from "./change-meta";
+import { baseName } from "@spire/types";
 
 /** Copy text to the clipboard (best-effort). */
 export async function copyText(text: string): Promise<boolean> {

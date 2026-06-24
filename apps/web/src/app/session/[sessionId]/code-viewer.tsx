@@ -21,7 +21,7 @@ import {
 } from "@/components/monaco-viewer";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { baseName } from "@/lib/change-meta";
+import { baseName } from "@spire/types";
 import { copyText, downloadText } from "@/lib/file-actions";
 import { useFileContent } from "@/lib/use-file-content";
 import { cn } from "@/lib/utils";

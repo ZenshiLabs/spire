@@ -13,7 +13,8 @@ import {
     CommandItem,
     CommandList,
 } from "@/components/ui/command";
-import { baseName, dirName } from "@/lib/change-meta";
+import { baseName } from "@spire/types";
+import { dirName } from "@/lib/change-meta";
 
 /** VSCode-style quick file open (Ctrl/Cmd+P). */
 export function QuickOpen() {

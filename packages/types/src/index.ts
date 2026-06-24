@@ -4,3 +4,4 @@ export * from "./events.js";
 export * from "./file.js";
 export * from "./file-identity.js";
 export * from "./session.js";
+export * from "./tree-utils.js";

@@ -1,8 +1,6 @@
-import type { FileNode } from "@spire/types";
+import type { FileNode } from "./file.js";
 
 export type FlatNode = { node: FileNode; depth: number };
-
-export { baseName } from "@spire/types";
 
 function compareNodes(a: FileNode, b: FileNode): number {
     if (a.type !== b.type) {
@@ -17,8 +15,7 @@ function sortChildren(children: FileNode[]): FileNode[] {
 
 /**
  * Returns a deep copy of the tree with every directory's children sorted
- * directories-first then alphabetically by name. Applied once when a snapshot
- * lands so the file tree renders in a stable, predictable order.
+ * directories-first then alphabetically by name.
  */
 export function sortTree(node: FileNode): FileNode {
     if (node.type !== "directory") {
@@ -46,10 +43,8 @@ export function indexTree(
 }
 
 /**
- * Projects the tree into the flat list of rows currently visible to the
- * virtualized renderer. Only children of expanded directories are included,
- * so this is O(visible nodes) rather than O(all nodes), enabling smooth
- * rendering of large trees without virtualizing the full structure.
+ * Projects the tree into the flat list of rows currently visible to a
+ * virtualized renderer. Only children of expanded directories are included.
  */
 export function flattenTree(root: FileNode | null, expanded: Set<string>): FlatNode[] {
     const out: FlatNode[] = [];

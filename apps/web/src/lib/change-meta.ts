@@ -31,8 +31,6 @@ export const CHANGE_META: Record<
     },
 };
 
-export { baseName } from "@spire/types";
-
 export function dirName(path: string): string {
     const parts = path.split("/");
     parts.pop();

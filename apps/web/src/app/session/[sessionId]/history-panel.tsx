@@ -1,6 +1,6 @@
 "use client";
 
-import type { ChangeType, CheckpointChange } from "@spire/types";
+import { baseName, type ChangeType, type CheckpointChange } from "@spire/types";
 import { useFileTreeStore } from "@spire/stores/file-tree-store";
 import { useHistoryStore } from "@spire/stores/history-store";
 import { ArrowUpIcon } from "lucide-react";
@@ -8,7 +8,7 @@ import { ArrowUpIcon } from "lucide-react";
 import { FileTypeIcon } from "@/components/file-icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { baseName, CHANGE_META, dirName, formatRelativeTime } from "@/lib/change-meta";
+import { CHANGE_META, dirName, formatRelativeTime } from "@/lib/change-meta";
 import { fetchCheckpoint } from "@/lib/session-api";
 import { cn } from "@/lib/utils";
 
