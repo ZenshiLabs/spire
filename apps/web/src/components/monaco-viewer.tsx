@@ -111,11 +111,13 @@ export function MonacoDiffViewer({
   original,
   modified,
   sideBySide = true,
+  wordWrap = "off",
 }: {
   path: string;
   original: string;
   modified: string;
   sideBySide?: boolean;
+  wordWrap?: "on" | "off";
 }) {
   const { monaco, ready } = useShikiMonaco();
   const { shikiTheme, fallback } = useEditorTheme();
@@ -139,6 +141,7 @@ export function MonacoDiffViewer({
         ...MONACO_OPTIONS,
         renderSideBySide: sideBySide,
         originalEditable: false,
+        wordWrap,
       }}
     />
   );
