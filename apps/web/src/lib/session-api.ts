@@ -32,7 +32,12 @@ type ApiEnvelope<T> =
 
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
     const response = await fetch(url, { signal, cache: "no-store" });
-    const body = (await response.json()) as ApiEnvelope<T>;
+    let body: ApiEnvelope<T>;
+    try {
+        body = (await response.json()) as ApiEnvelope<T>;
+    } catch {
+        throw new Error(`Server error ${response.status}: ${response.statusText || "unexpected response"}`);
+    }
     if (!response.ok || !body.ok) {
         const message = body.ok ? response.statusText : body.error.message;
         throw new Error(message || "Request failed.");
