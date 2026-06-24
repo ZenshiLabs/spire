@@ -4,21 +4,7 @@ import { useEditorStore } from "@spire/stores/editor-store";
 import { useSessionStore } from "@spire/stores/session-store";
 
 import { cn } from "@/lib/utils";
-import type { StreamStatus } from "@/lib/use-session-stream";
-
-const STATUS_LABELS: Record<StreamStatus, string> = {
-    connecting: "Connecting",
-    live: "Live",
-    ended: "Ended",
-    error: "Disconnected",
-};
-
-const STATUS_DOT: Record<StreamStatus, string> = {
-    connecting: "bg-amber-500",
-    live: "bg-emerald-500",
-    ended: "bg-muted-foreground",
-    error: "bg-destructive",
-};
+import { STATUS_LABELS, STATUS_DOT, type StreamStatus } from "@/lib/use-session-stream";
 
 export function StatusBar({
     sessionId,

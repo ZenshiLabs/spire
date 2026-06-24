@@ -13,12 +13,26 @@ import { fetchSessionState, type SessionState } from "./session-api";
 
 export type StreamStatus = "connecting" | "live" | "ended" | "error";
 
+export const STATUS_LABELS: Record<StreamStatus, string> = {
+    connecting: "Connecting",
+    live: "Live",
+    ended: "Ended",
+    error: "Disconnected",
+};
+
+export const STATUS_DOT: Record<StreamStatus, string> = {
+    connecting: "bg-amber-500",
+    live: "bg-emerald-500",
+    ended: "bg-muted-foreground",
+    error: "bg-destructive",
+};
+
 type StreamResult = {
     status: StreamStatus;
     error: string | null;
 };
 
-function decorationsFromChanges(
+export function decorationsFromChanges(
     changes: CheckpointChange[]
 ): Map<string, ChangeType> {
     const map = new Map<string, ChangeType>();
