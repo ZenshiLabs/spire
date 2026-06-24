@@ -1,7 +1,10 @@
 "use client";
 
+import type { CheckpointChange } from "@spire/types";
+import { useEditorStore } from "@spire/stores/editor-store";
+import { useHistoryStore } from "@spire/stores/history-store";
 import { useSessionStore } from "@spire/stores/session-store";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { ActivityBar, type ActivityView } from "@/components/activity-bar";
 import { QuickOpen } from "@/components/quick-open";
@@ -16,6 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useSessionStream, type StreamStatus } from "@/lib/use-session-stream";
 
+import { CheckpointDiffPane } from "./checkpoint-diff-pane";
 import { CodeViewer } from "./code-viewer";
 import { FileTree } from "./file-tree";
 import { HistoryPanel } from "./history-panel";
@@ -38,9 +42,29 @@ export function SessionViewer({ sessionId }: { sessionId: string }) {
     const { status, error } = useSessionStream(sessionId);
     const session = useSessionStore((state) => state.session);
     const [view, setView] = useState<ActivityView>("explorer");
+    const [selectedChange, setSelectedChange] = useState<CheckpointChange | null>(null);
 
     const title = session?.title ?? "Spire session";
     const description = session?.description ?? null;
+
+    const handleSelectChange = useCallback((change: CheckpointChange | null) => {
+        setSelectedChange(change);
+    }, []);
+
+    // Auto-select the latest checkpoint when switching to the timeline view.
+    useEffect(() => {
+        if (view !== "timeline") return;
+        const history = useHistoryStore.getState();
+        if (history.checkpoints.length === 0 || history.selectedSeq !== null) return;
+        const latest = history.checkpoints[0];
+        if (!latest) return;
+        history.selectSeq(latest.seq);
+    }, [view]);
+
+    const handleOpenFile = (path: string) => {
+        useEditorStore.getState().openFile(path);
+        setView("explorer");
+    };
 
     return (
         <div className="flex h-svh flex-col">
@@ -97,12 +121,23 @@ export function SessionViewer({ sessionId }: { sessionId: string }) {
                                 onOpenTimeline={() => setView("timeline")}
                             />
                         ) : (
-                            <HistoryPanel sessionId={sessionId} />
+                            <HistoryPanel
+                                sessionId={sessionId}
+                                selectedChange={selectedChange}
+                                onSelectChange={handleSelectChange}
+                            />
                         )}
                     </ResizablePanel>
                     <ResizableHandle withHandle />
                     <ResizablePanel defaultSize={78}>
-                        <CodeViewer sessionId={sessionId} />
+                        {view === "timeline" ? (
+                            <CheckpointDiffPane
+                                sessionId={sessionId}
+                                selectedChange={selectedChange}
+                            />
+                        ) : (
+                            <CodeViewer sessionId={sessionId} />
+                        )}
                     </ResizablePanel>
                 </ResizablePanelGroup>
             </div>
