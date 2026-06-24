@@ -1,10 +1,10 @@
-import { failure } from "../../../_lib/http";
+import { failure, routeHandler } from "@/server/http";
 import {
     buildConnectedEvent,
     getSessionById,
     isSessionStale,
     subscribeToSession,
-} from "../../../_lib/state";
+} from "@/server/state";
 import type { SSEEvent } from "@spire/types";
 
 /**
@@ -22,7 +22,7 @@ function encodeSSEData(event: SSEEvent) {
     return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
 }
 
-export async function GET(_request: Request, context: RouteContext) {
+export const GET = routeHandler(async (_request: Request, context: RouteContext) => {
     const { sessionId } = await Promise.resolve(context.params);
     const session = await getSessionById(sessionId);
 
@@ -110,4 +110,4 @@ export async function GET(_request: Request, context: RouteContext) {
             connection: "keep-alive",
         },
     });
-}
+});

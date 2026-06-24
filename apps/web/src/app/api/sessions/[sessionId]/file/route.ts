@@ -1,6 +1,6 @@
 import { HASH_RE } from "@spire/types";
-import { failure, success } from "../../../_lib/http";
-import { getFileContent } from "../../../_lib/state";
+import { failure, routeHandler, success } from "@/server/http";
+import { getFileContent } from "@/server/state";
 
 type RouteContext = {
     params: { sessionId: string } | Promise<{ sessionId: string }>;
@@ -10,7 +10,7 @@ type RouteContext = {
  * Lazy file-content fetch. `ref` is a 64-hex blob hash, the literal "latest",
  * or a checkpoint seq — powering on-demand opens and diff old/new versions.
  */
-export async function GET(request: Request, context: RouteContext) {
+export const GET = routeHandler(async (request: Request, context: RouteContext) => {
     const { sessionId } = await Promise.resolve(context.params);
     const url = new URL(request.url);
     const path = url.searchParams.get("path");
@@ -32,4 +32,4 @@ export async function GET(request: Request, context: RouteContext) {
         ? "public, max-age=31536000, immutable"
         : "no-store";
     return success(result, 200, { "cache-control": cacheControl });
-}
+});

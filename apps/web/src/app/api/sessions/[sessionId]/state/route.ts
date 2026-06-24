@@ -1,11 +1,11 @@
-import { failure, success } from "../../../_lib/http";
-import { buildSessionState } from "../../../_lib/state";
+import { failure, routeHandler, success } from "@/server/http";
+import { buildSessionState } from "@/server/state";
 
 type RouteContext = {
     params: { sessionId: string } | Promise<{ sessionId: string }>;
 };
 
-export async function GET(_request: Request, context: RouteContext) {
+export const GET = routeHandler(async (_request: Request, context: RouteContext) => {
     const { sessionId } = await Promise.resolve(context.params);
     const state = await buildSessionState(sessionId);
 
@@ -14,4 +14,4 @@ export async function GET(_request: Request, context: RouteContext) {
     }
 
     return success(state);
-}
+});

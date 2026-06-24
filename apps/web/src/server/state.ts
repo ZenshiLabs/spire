@@ -484,15 +484,55 @@ export async function calculateCheckpointChanges(
     let additions = 0;
     let deletions = 0;
 
-    for (const entry of entries) {
-        if (entry.changeType === "deleted") {
-            const prior = await readHead(entry.path);
-            const beforeHash = prior?.hash ?? null;
-            let del = 0;
-            if (prior && !prior.binary && beforeHash) {
-                const blob = await readBlob(beforeHash);
-                del = blob && !blob.binary ? countLines(blob.content) : 0;
-            }
+    // Fetch all entry heads in parallel, then chain each item's blob read off its
+    // resolved head so a slow entry never blocks the others.
+    const results = await Promise.all(
+        entries.map((entry) =>
+            readHead(entry.path).then(async (prior) => {
+                if (entry.changeType === "deleted") {
+                    const beforeHash = prior?.hash ?? null;
+                    let del = 0;
+                    if (prior && !prior.binary && beforeHash) {
+                        const blob = await readBlob(beforeHash);
+                        del = blob && !blob.binary ? countLines(blob.content) : 0;
+                    }
+                    return { entry, prior, beforeHash, kind: "deleted" as const, add: 0, del };
+                }
+
+                const afterHash = entry.hash;
+                if (!afterHash) {
+                    return { entry, prior, beforeHash: null, kind: "skip" as const, add: 0, del: 0 };
+                }
+
+                const beforeHash = prior?.hash ?? null;
+                if (prior && prior.hash === afterHash) {
+                    return { entry, prior, beforeHash, kind: "skip" as const, add: 0, del: 0 };
+                }
+
+                let add = 0;
+                let del = 0;
+                if (!entry.binary) {
+                    const after = entry.content ?? "";
+                    if (!prior) {
+                        add = countLines(after);
+                    } else {
+                        const before = beforeHash ? await readBlob(beforeHash) : null;
+                        ({ add, del } = countDiff(before?.content ?? "", after));
+                    }
+                }
+                return { entry, prior, beforeHash, kind: "upsert" as const, add, del };
+            })
+        )
+    );
+
+    for (const r of results) {
+        const { entry, prior, beforeHash, kind, add, del } = r;
+
+        if (kind === "skip") {
+            continue;
+        }
+
+        if (kind === "deleted") {
             deletions += del;
             headDeletes.push(entry.path);
             changes.push({
@@ -507,17 +547,7 @@ export async function calculateCheckpointChanges(
             continue;
         }
 
-        const afterHash = entry.hash;
-        if (!afterHash) {
-            continue;
-        }
-
-        const prior = await readHead(entry.path);
-        const beforeHash = prior?.hash ?? null;
-        if (prior && prior.hash === afterHash) {
-            continue;
-        }
-
+        const afterHash = entry.hash!;
         if (!newBlobs.has(afterHash)) {
             newBlobs.set(afterHash, {
                 hash: afterHash,
@@ -528,17 +558,6 @@ export async function calculateCheckpointChanges(
         }
 
         const changeType: ChangeType = prior ? "modified" : "added";
-        let add = 0;
-        let del = 0;
-        if (!entry.binary) {
-            const after = entry.content ?? "";
-            if (!prior) {
-                add = countLines(after);
-            } else {
-                const before = beforeHash ? await readBlob(beforeHash) : null;
-                ({ add, del } = countDiff(before?.content ?? "", after));
-            }
-        }
         additions += add;
         deletions += del;
         headUpserts.push({
@@ -617,62 +636,72 @@ export async function ingestSnapshot(payload: FileSnapshot): Promise<IngestResul
     let additions = 0;
     let deletions = 0;
 
-    for (const f of incoming) {
-        const prior = priorByPath.get(f.path);
-        if (!prior) {
-            const add = f.binary ? 0 : countLines(f.content);
-            additions += add;
-            headUpserts.push({ path: f.path, hash: f.hash, size: f.size, binary: f.binary });
-            changes.push({
-                path: f.path,
-                changeType: "added",
-                beforeHash: null,
-                afterHash: f.hash,
-                additions: add,
-                deletions: 0,
-                binary: f.binary || undefined,
-            });
-        } else if (prior.hash !== f.hash) {
+    // Fetch all blobs needed for diff computation in parallel, chaining each
+    // blob read off its corresponding incoming file so a slow item doesn't
+    // block the others.
+    const incomingResults = await Promise.all(
+        incoming.map(async (f) => {
+            const prior = priorByPath.get(f.path);
+            if (!prior) {
+                const add = f.binary ? 0 : countLines(f.content);
+                return { f, prior, add, del: 0, kind: "added" as const };
+            }
+            if (prior.hash === f.hash) {
+                return { f, prior, add: 0, del: 0, kind: "unchanged" as const };
+            }
             let add = 0;
             let del = 0;
             if (!f.binary && !prior.binary) {
                 const before = await dbGetBlob(sessionId, prior.hash);
                 ({ add, del } = countDiff(before?.content ?? "", f.content));
             }
-            additions += add;
-            deletions += del;
-            headUpserts.push({ path: f.path, hash: f.hash, size: f.size, binary: f.binary });
-            changes.push({
-                path: f.path,
-                changeType: "modified",
-                beforeHash: prior.hash,
-                afterHash: f.hash,
-                additions: add,
-                deletions: del,
-                binary: f.binary || undefined,
-            });
+            return { f, prior, add, del, kind: "modified" as const };
+        })
+    );
+
+    for (const r of incomingResults) {
+        const { f, prior, add, del, kind } = r;
+        if (kind === "unchanged") {
+            continue;
         }
+        additions += add;
+        deletions += del;
+        headUpserts.push({ path: f.path, hash: f.hash, size: f.size, binary: f.binary });
+        changes.push({
+            path: f.path,
+            changeType: kind,
+            beforeHash: prior?.hash ?? null,
+            afterHash: f.hash,
+            additions: add,
+            deletions: del,
+            binary: f.binary || undefined,
+        });
     }
 
-    for (const prior of priorHead) {
-        if (!incomingPaths.has(prior.path)) {
+    const deletedPriors = priorHead.filter((p) => !incomingPaths.has(p.path));
+    const deletedResults = await Promise.all(
+        deletedPriors.map(async (prior) => {
             let del = 0;
             if (!prior.binary) {
                 const blob = await dbGetBlob(sessionId, prior.hash);
                 del = blob && !blob.binary ? countLines(blob.content) : 0;
             }
-            deletions += del;
-            headDeletes.push(prior.path);
-            changes.push({
-                path: prior.path,
-                changeType: "deleted",
-                beforeHash: prior.hash,
-                afterHash: null,
-                additions: 0,
-                deletions: del,
-                binary: prior.binary || undefined,
-            });
-        }
+            return { prior, del };
+        })
+    );
+
+    for (const { prior, del } of deletedResults) {
+        deletions += del;
+        headDeletes.push(prior.path);
+        changes.push({
+            path: prior.path,
+            changeType: "deleted",
+            beforeHash: prior.hash,
+            afterHash: null,
+            additions: 0,
+            deletions: del,
+            binary: prior.binary || undefined,
+        });
     }
 
     if (changes.length > 0) {

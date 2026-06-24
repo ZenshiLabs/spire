@@ -1,14 +1,16 @@
 import { FileSnapshotSchema } from "@spire/types";
-import { failure, readJsonBody, success } from "../../../_lib/http";
-import { ingestSnapshot } from "../../../_lib/state";
+import { failure, readJsonBody, routeHandler, success } from "@/server/http";
+import { ingestSnapshot } from "@/server/state";
 
 type RouteContext = {
     params: { sessionId: string } | Promise<{ sessionId: string }>;
 };
 
-export async function POST(request: Request, context: RouteContext) {
-    const { sessionId } = await Promise.resolve(context.params);
-    const body = await readJsonBody(request);
+export const POST = routeHandler(async (request: Request, context: RouteContext) => {
+    const [{ sessionId }, body] = await Promise.all([
+        Promise.resolve(context.params),
+        readJsonBody(request),
+    ]);
     const parsed = FileSnapshotSchema.safeParse(body);
 
     if (!parsed.success) {
@@ -32,4 +34,4 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     return success({ accepted: true }, 202);
-}
+});

@@ -1,5 +1,5 @@
-import { failure, success } from "../../../../_lib/http";
-import { getCheckpoint } from "../../../../_lib/state";
+import { failure, routeHandler, success } from "@/server/http";
+import { getCheckpoint } from "@/server/state";
 
 type RouteContext = {
     params:
@@ -8,7 +8,7 @@ type RouteContext = {
 };
 
 /** A single checkpoint with its full per-file change list. */
-export async function GET(_request: Request, context: RouteContext) {
+export const GET = routeHandler(async (_request: Request, context: RouteContext) => {
     const { sessionId, seq } = await Promise.resolve(context.params);
     const seqNum = Number(seq);
 
@@ -22,4 +22,4 @@ export async function GET(_request: Request, context: RouteContext) {
     }
 
     return success(checkpoint);
-}
+});

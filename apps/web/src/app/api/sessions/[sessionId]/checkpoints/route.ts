@@ -1,12 +1,12 @@
-import { failure, success } from "../../../_lib/http";
-import { getCheckpoints, getSessionById } from "../../../_lib/state";
+import { failure, routeHandler, success } from "@/server/http";
+import { getCheckpoints, getSessionById } from "@/server/state";
 
 type RouteContext = {
     params: { sessionId: string } | Promise<{ sessionId: string }>;
 };
 
 /** Paginated checkpoint history (newest first). `?before=<seq>&limit=<n>`. */
-export async function GET(request: Request, context: RouteContext) {
+export const GET = routeHandler(async (request: Request, context: RouteContext) => {
     const { sessionId } = await Promise.resolve(context.params);
     const url = new URL(request.url);
 
@@ -15,12 +15,7 @@ export async function GET(request: Request, context: RouteContext) {
     const beforeRaw = url.searchParams.get("before");
     const beforeSeq = beforeRaw !== null ? Number(beforeRaw) : undefined;
 
-    const session = await getSessionById(sessionId);
-    if (!session) {
-        return failure("not_found", "Session was not found.", 404);
-    }
-
-    const checkpoints = await getCheckpoints(sessionId, {
+    const checkpointsPromise = getCheckpoints(sessionId, {
         limit: Number.isFinite(limit) ? limit : 100,
         beforeSeq:
             beforeSeq !== undefined && Number.isFinite(beforeSeq)
@@ -28,5 +23,12 @@ export async function GET(request: Request, context: RouteContext) {
                 : undefined,
     });
 
+    const session = await getSessionById(sessionId);
+    if (!session) {
+        return failure("not_found", "Session was not found.", 404);
+    }
+
+    const checkpoints = await checkpointsPromise;
+
     return success({ checkpoints });
-}
+});

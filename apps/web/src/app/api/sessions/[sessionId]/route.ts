@@ -1,12 +1,12 @@
 import { CreateSessionSchema } from "@spire/types";
-import { failure, readJsonBody, success } from "../../_lib/http";
-import { endSession, getSessionById, upsertSession } from "../../_lib/state";
+import { failure, readJsonBody, routeHandler, success } from "@/server/http";
+import { endSession, getSessionById, upsertSession } from "@/server/state";
 
 type RouteContext = {
     params: { sessionId: string } | Promise<{ sessionId: string }>;
 };
 
-export async function GET(_request: Request, context: RouteContext) {
+export const GET = routeHandler(async (_request: Request, context: RouteContext) => {
     const { sessionId } = await Promise.resolve(context.params);
     const session = await getSessionById(sessionId);
 
@@ -15,11 +15,13 @@ export async function GET(_request: Request, context: RouteContext) {
     }
 
     return success(session);
-}
+});
 
-export async function PUT(request: Request, context: RouteContext) {
-    const { sessionId } = await Promise.resolve(context.params);
-    const body = await readJsonBody(request);
+export const PUT = routeHandler(async (request: Request, context: RouteContext) => {
+    const [{ sessionId }, body] = await Promise.all([
+        Promise.resolve(context.params),
+        readJsonBody(request),
+    ]);
     const parsed = CreateSessionSchema.safeParse(body ?? {});
 
     if (!parsed.success) {
@@ -30,9 +32,9 @@ export async function PUT(request: Request, context: RouteContext) {
 
     const session = await upsertSession(sessionId, parsed.data);
     return success(session);
-}
+});
 
-export async function DELETE(_request: Request, context: RouteContext) {
+export const DELETE = routeHandler(async (_request: Request, context: RouteContext) => {
     const { sessionId } = await Promise.resolve(context.params);
     const result = await endSession(sessionId);
 
@@ -45,4 +47,4 @@ export async function DELETE(_request: Request, context: RouteContext) {
     }
 
     return new Response(null, { status: 204 });
-}
+});

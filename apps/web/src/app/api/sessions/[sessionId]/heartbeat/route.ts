@@ -1,5 +1,5 @@
-import { failure } from "../../../_lib/http";
-import { touchSession } from "../../../_lib/state";
+import { failure, routeHandler } from "@/server/http";
+import { touchSession } from "@/server/state";
 
 type RouteContext = {
     params: { sessionId: string } | Promise<{ sessionId: string }>;
@@ -10,7 +10,7 @@ type RouteContext = {
  * it stays inside the staleness window even while idle. Bodyless and cheap; an
  * unknown session is a 404 so a stale CLI learns its session is gone.
  */
-export async function POST(_request: Request, context: RouteContext) {
+export const POST = routeHandler(async (_request: Request, context: RouteContext) => {
     const { sessionId } = await Promise.resolve(context.params);
     const touched = await touchSession(sessionId);
 
@@ -19,4 +19,4 @@ export async function POST(_request: Request, context: RouteContext) {
     }
 
     return new Response(null, { status: 204 });
-}
+});

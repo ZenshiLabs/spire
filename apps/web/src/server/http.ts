@@ -32,3 +32,15 @@ export async function readJsonBody(request: Request) {
         return null;
     }
 }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function routeHandler<T extends (...args: any[]) => Promise<Response>>(fn: T): T {
+    return (async (...args: Parameters<T>) => {
+        try {
+            return await fn(...args);
+        } catch (err) {
+            console.error("[API Error]", err);
+            return failure("internal_error", "An unexpected error occurred.", 500);
+        }
+    }) as T;
+}
