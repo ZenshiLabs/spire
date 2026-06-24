@@ -39,5 +39,11 @@ export function listFilePaths(node: FileNode, into: string[] = []): string[] {
  * a sensible default file when a viewer first loads a session.
  */
 export function firstFilePath(node: FileNode): string | undefined {
-    return listFilePaths(node).sort()[0];
+    const paths = listFilePaths(node);
+    if (paths.length === 0) return undefined;
+    let first = paths[0]!;
+    for (let i = 1; i < paths.length; i++) {
+        if (paths[i]! < first) first = paths[i]!;
+    }
+    return first;
 }
