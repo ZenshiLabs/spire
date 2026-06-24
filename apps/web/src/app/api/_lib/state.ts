@@ -22,6 +22,8 @@ import {
 import {
     baseName,
     HASH_RE,
+    insertFile,
+    sortTree,
     type ChangeType,
     type Checkpoint,
     type CheckpointChange,
@@ -330,11 +332,32 @@ export async function getFileContent(sessionId: string, path: string, ref: strin
     return result;
 }
 
+function buildTreeFromHeadFiles(
+    headFiles: Array<{ path: string; hash: string; size: number; binary: boolean }>
+): FileNode {
+    let root: FileNode = { type: "directory", name: "", path: "", children: [] };
+    for (const f of headFiles) {
+        root = insertFile(root, {
+            type: "file",
+            name: baseName(f.path),
+            path: f.path,
+            size: f.size,
+            hash: f.hash,
+            binary: f.binary || undefined,
+        });
+    }
+    return sortTree(root);
+}
+
 /**
  * Assembles the full initial payload for a connecting viewer: the session
  * record, the current metadata tree, recent checkpoint summaries, and the
  * load mode. In eager mode a hash → content map is also included so the
  * viewer can open files instantly without per-file fetches.
+ *
+ * The file tree is rebuilt from the head-files table rather than the stored
+ * snapshot tree, because the snapshot is only updated on CLI reconnect while
+ * the head table reflects every incremental checkpoint.
  */
 export async function buildSessionState(sessionId: string) {
     const raw = await dbGetSession(sessionId);
@@ -343,11 +366,20 @@ export async function buildSessionState(sessionId: string) {
     }
     const session = withLiveness(raw);
 
-    const [snapshot, checkpoints, stats] = await Promise.all([
+    const [rawSnapshot, checkpoints, headFiles, stats] = await Promise.all([
         dbGetSnapshot(sessionId),
         dbGetCheckpoints(sessionId, { limit: 200 }),
+        dbGetFilesHead(sessionId),
         dbGetSessionStats(sessionId),
     ]);
+
+    // Prefer the head-files table (always current) over the stored snapshot
+    // tree (only updated on CLI reconnect). Fall back to the stored tree when
+    // the head table is empty (session has no data yet).
+    const snapshot =
+        rawSnapshot && headFiles.length > 0
+            ? { ...rawSnapshot, tree: buildTreeFromHeadFiles(headFiles) }
+            : rawSnapshot;
 
     const eager =
         stats.totalSize <= EAGER_MAX_BYTES && stats.fileCount <= EAGER_MAX_FILES;
