@@ -84,3 +84,26 @@ export function toPosixPath(filePath: string): string {
  * unacceptably large upload payload.
  */
 export const MAX_FILE_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Returns the command users should type to re-invoke the CLI.
+ *
+ * All package managers set `npm_config_user_agent` when they are the ones
+ * invoking the process, and set `npm_lifecycle_event` for run-script contexts
+ * (e.g. `pnpm run dev`) but not for one-shot exec commands (npx / bunx /
+ * pnpm dlx / yarn dlx). Checking both lets us distinguish "global binary" from
+ * "one-shot exec" and output the right re-run command.
+ */
+export function getInvokedAs(env: RuntimeEnv = getRuntimeEnv()): string {
+    // run-script contexts set npm_lifecycle_event; the globally-installed binary
+    // does not go through a package manager at all, so neither does it.
+    if (env.npm_lifecycle_event) return "spire";
+
+    const agent = env.npm_config_user_agent ?? "";
+    if (agent.startsWith("bun/")) return "bunx @zenshilabs/spire";
+    if (agent.startsWith("pnpm/")) return "pnpm dlx @zenshilabs/spire";
+    if (agent.startsWith("yarn/")) return "yarn dlx @zenshilabs/spire";
+    if (env.npm_command === "exec") return "npx @zenshilabs/spire";
+
+    return "spire";
+}

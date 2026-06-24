@@ -12,6 +12,7 @@ import {
 import { SpireApiClient } from "../api/client.js";
 import {
     getHeartbeatIntervalMs,
+    getInvokedAs,
     getWatcherTiming,
     MAX_FILE_BYTES,
     toPosixPath,
@@ -388,27 +389,31 @@ export async function runStartCommand(options: StartOptions) {
     }, getHeartbeatIntervalMs());
     heartbeat.unref();
 
-    await waitForShutdown();
-    clearInterval(heartbeat);
-
-    /**
-     * Flush any in-flight edits before tearing down so files saved in the moment
-     * before Ctrl+C are captured in the final checkpoint and not silently dropped.
-     */
-    await watcher.stop();
-    await batcher.flushNow();
-    batcher.stop();
-    await persistRegistry();
-
     try {
-        await client.endSession(session.id);
-        log.success(
-            `Session ${session.id} stopped. Re-run "spire start" here to resume the same URL.`
-        );
-    } catch (error) {
-        log.warn(
-            `Could not reach the server to end the session (${errorMessage(error)}). The share URL still resumes on next start.`
-        );
+        await waitForShutdown();
+    } finally {
+        clearInterval(heartbeat);
+
+        /**
+         * Flush any in-flight edits before tearing down so files saved in the moment
+         * before Ctrl+C are captured in the final checkpoint and not silently dropped.
+         */
+        await watcher.stop();
+        await batcher.flushNow();
+        batcher.stop();
+        await persistRegistry();
+
+        try {
+            await client.endSession(session.id);
+            const cmd = getInvokedAs();
+            log.success(
+                `Session ${session.id} stopped. Re-run "${cmd} start" here to resume the same URL.`
+            );
+        } catch (error) {
+            log.warn(
+                `Could not reach the server to end the session (${errorMessage(error)}). The share URL still resumes on next start.`
+            );
+        }
     }
 }
 
