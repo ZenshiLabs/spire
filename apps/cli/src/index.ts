@@ -9,6 +9,7 @@ import {
     parseOptions,
     runCommand,
 } from "./commands/handler.js";
+import { checkForUpdate } from "./update-check.js";
 
 type RuntimeProcess = {
     argv: string[];
@@ -42,7 +43,15 @@ async function promptForCommand(): Promise<CliCommand | null> {
 }
 
 async function main() {
+    // Fire immediately so the registry fetch runs in parallel with sync startup work.
+    const updateCheck = checkForUpdate();
+
     intro("Spire CLI");
+
+    // By the time intro() renders, the fetch is already in flight.
+    // Awaiting here shows any update warning before the user picks a command.
+    await updateCheck;
+
     const runtimeProcess = getRuntimeProcess();
     const apiBaseUrl = getApiBaseUrl();
 
