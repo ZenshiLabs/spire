@@ -3,21 +3,16 @@
 import type { ChangeType, CheckpointChange } from "@spire/types";
 import { useFileTreeStore } from "@spire/stores/file-tree-store";
 import { useHistoryStore } from "@spire/stores/history-store";
-import { ArrowUpIcon, ChevronRightIcon } from "lucide-react";
-import { useState } from "react";
+import { ArrowUpIcon } from "lucide-react";
 
 import { FileTypeIcon } from "@/components/file-icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MonacoDiffViewer } from "@/components/monaco-viewer";
 import { baseName, CHANGE_META, dirName, formatRelativeTime } from "@/lib/change-meta";
 import { fetchCheckpoint } from "@/lib/session-api";
-import { useFileContent } from "@/lib/use-file-content";
 import { cn } from "@/lib/utils";
 
-function decorationsFromChanges(
-    changes: CheckpointChange[]
-): Map<string, ChangeType> {
+function decorationsFromChanges(changes: CheckpointChange[]): Map<string, ChangeType> {
     const map = new Map<string, ChangeType>();
     for (const change of changes) {
         map.set(change.path, change.changeType);
@@ -25,102 +20,32 @@ function decorationsFromChanges(
     return map;
 }
 
-function ChangeDiff({
+export function HistoryPanel({
     sessionId,
-    change,
+    selectedChange,
+    onSelectChange,
 }: {
     sessionId: string;
-    change: CheckpointChange;
+    selectedChange: CheckpointChange | null;
+    onSelectChange: (change: CheckpointChange | null) => void;
 }) {
-    const before = useFileContent(sessionId, change.path, change.beforeHash, {
-        binary: change.binary,
-    });
-    const after = useFileContent(sessionId, change.path, change.afterHash, {
-        binary: change.binary,
-    });
-
-    if (change.binary) {
-        return (
-            <div className="text-muted-foreground bg-muted/30 p-4 text-center text-xs">
-                Binary file — diff not available.
-            </div>
-        );
-    }
-    if (before.loading || after.loading) {
-        return <Skeleton className="h-[280px] w-full rounded-none" />;
-    }
-    return (
-        <div className="h-[280px] border-y">
-            <MonacoDiffViewer
-                path={change.path}
-                original={before.content ?? ""}
-                modified={after.content ?? ""}
-                sideBySide={false}
-            />
-        </div>
-    );
-}
-
-function ChangeRow({
-    sessionId,
-    change,
-    open,
-    onToggle,
-}: {
-    sessionId: string;
-    change: CheckpointChange;
-    open: boolean;
-    onToggle: () => void;
-}) {
-    const decoration = CHANGE_META[change.changeType];
-    return (
-        <div>
-            <button
-                type="button"
-                onClick={onToggle}
-                className="hover:bg-accent/50 flex w-full items-center gap-1.5 py-1 pr-2 pl-3 text-left text-xs"
-            >
-                <ChevronRightIcon
-                    className={cn(
-                        "text-muted-foreground size-3 shrink-0 transition-transform",
-                        open && "rotate-90"
-                    )}
-                />
-                <FileTypeIcon kind="file" name={baseName(change.path)} className="size-3.5" />
-                <span className="truncate">{baseName(change.path)}</span>
-                <span className="text-muted-foreground/70 truncate">{dirName(change.path)}</span>
-                <span className="ml-auto flex shrink-0 items-center gap-1.5 font-mono">
-                    {change.additions > 0 && (
-                        <span className="text-emerald-500">+{change.additions}</span>
-                    )}
-                    {change.deletions > 0 && (
-                        <span className="text-red-500">−{change.deletions}</span>
-                    )}
-                    <span className={cn("w-3 text-center font-semibold", decoration.className)}>
-                        {decoration.letter}
-                    </span>
-                </span>
-            </button>
-            {open && <ChangeDiff sessionId={sessionId} change={change} />}
-        </div>
-    );
-}
-
-export function HistoryPanel({ sessionId }: { sessionId: string }) {
     const checkpoints = useHistoryStore((state) => state.checkpoints);
     const selectedSeq = useHistoryStore((state) => state.selectedSeq);
     const newWhileBrowsing = useHistoryStore((state) => state.newWhileBrowsing);
-    const [openPath, setOpenPath] = useState<string | null>(null);
+    const selectedCheckpoint = useHistoryStore((state) =>
+        state.selectedSeq !== null ? state.bySeq.get(state.selectedSeq) : undefined
+    );
 
     const onSelect = async (seq: number) => {
         const history = useHistoryStore.getState();
         if (history.selectedSeq === seq) {
             history.selectSeq(null);
             useFileTreeStore.getState().setDecorations(new Map());
+            onSelectChange(null);
             return;
         }
         history.selectSeq(seq);
-        setOpenPath(null);
+        onSelectChange(null);
         let checkpoint = history.bySeq.get(seq);
         if (!checkpoint) {
             try {
@@ -130,22 +55,20 @@ export function HistoryPanel({ sessionId }: { sessionId: string }) {
                 return;
             }
         }
-        useFileTreeStore
-            .getState()
-            .setDecorations(decorationsFromChanges(checkpoint.changes));
+        useFileTreeStore.getState().setDecorations(decorationsFromChanges(checkpoint.changes));
+        if (checkpoint.changes.length > 0) {
+            onSelectChange(checkpoint.changes[0] ?? null);
+        }
     };
 
     const jumpToLatest = () => {
         useHistoryStore.getState().selectSeq(null);
         useFileTreeStore.getState().setDecorations(new Map());
+        onSelectChange(null);
     };
 
-    const selectedCheckpoint = useHistoryStore((state) =>
-        state.selectedSeq !== null ? state.bySeq.get(state.selectedSeq) : undefined
-    );
-
     return (
-        <div className="flex h-full flex-col">
+        <div className="flex h-full flex-col overflow-hidden">
             <div className="text-muted-foreground flex h-8 shrink-0 items-center px-3 text-[11px] font-medium tracking-wide uppercase">
                 Timeline
             </div>
@@ -154,7 +77,7 @@ export function HistoryPanel({ sessionId }: { sessionId: string }) {
                 <button
                     type="button"
                     onClick={jumpToLatest}
-                    className="bg-primary/10 text-primary hover:bg-primary/15 flex items-center justify-center gap-1.5 border-y py-1.5 text-xs font-medium"
+                    className="bg-primary/10 text-primary hover:bg-primary/15 flex shrink-0 items-center justify-center gap-1.5 border-y py-1.5 text-xs font-medium"
                 >
                     <ArrowUpIcon className="size-3.5" />
                     {newWhileBrowsing} new change{newWhileBrowsing > 1 ? "s" : ""} — jump to latest
@@ -166,7 +89,7 @@ export function HistoryPanel({ sessionId }: { sessionId: string }) {
                     No changes yet.
                 </div>
             ) : (
-                <ScrollArea className="flex-1">
+                <ScrollArea className="h-0 flex-1">
                     <ul>
                         {checkpoints.map((checkpoint) => {
                             const selected = selectedSeq === checkpoint.seq;
@@ -207,27 +130,56 @@ export function HistoryPanel({ sessionId }: { sessionId: string }) {
                                     </button>
 
                                     {selected && (
-                                        <div className="bg-muted/20 border-t py-1">
+                                        <div className="border-t">
                                             {!selectedCheckpoint ? (
                                                 <div className="px-3 py-2">
                                                     <Skeleton className="h-4 w-full" />
                                                 </div>
                                             ) : (
-                                                selectedCheckpoint.changes.map((change) => (
-                                                    <ChangeRow
-                                                        key={change.path}
-                                                        sessionId={sessionId}
-                                                        change={change}
-                                                        open={openPath === change.path}
-                                                        onToggle={() =>
-                                                            setOpenPath((prev) =>
-                                                                prev === change.path
-                                                                    ? null
-                                                                    : change.path
-                                                            )
-                                                        }
-                                                    />
-                                                ))
+                                                selectedCheckpoint.changes.map((change) => {
+                                                    const meta = CHANGE_META[change.changeType];
+                                                    const active = selectedChange?.path === change.path;
+                                                    return (
+                                                        <button
+                                                            key={change.path}
+                                                            type="button"
+                                                            onClick={() => onSelectChange(change)}
+                                                            className={cn(
+                                                                "hover:bg-accent/50 flex w-full items-center gap-1.5 py-1 pr-2 pl-6 text-left text-xs transition-colors",
+                                                                active && "bg-accent/70"
+                                                            )}
+                                                        >
+                                                            <FileTypeIcon
+                                                                kind="file"
+                                                                name={baseName(change.path)}
+                                                                className="size-3.5 shrink-0"
+                                                            />
+                                                            <span className="truncate">
+                                                                {baseName(change.path)}
+                                                            </span>
+                                                            {dirName(change.path) && (
+                                                                <span className="text-muted-foreground/70 truncate text-[10px]">
+                                                                    {dirName(change.path)}
+                                                                </span>
+                                                            )}
+                                                            <span className="ml-auto flex shrink-0 items-center gap-1 font-mono text-[10px]">
+                                                                {change.additions > 0 && (
+                                                                    <span className="text-emerald-500">
+                                                                        +{change.additions}
+                                                                    </span>
+                                                                )}
+                                                                {change.deletions > 0 && (
+                                                                    <span className="text-red-500">
+                                                                        −{change.deletions}
+                                                                    </span>
+                                                                )}
+                                                                <span className={cn("w-3 text-center font-semibold", meta.className)}>
+                                                                    {meta.letter}
+                                                                </span>
+                                                            </span>
+                                                        </button>
+                                                    );
+                                                })
                                             )}
                                         </div>
                                     )}
