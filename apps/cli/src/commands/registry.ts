@@ -1,3 +1,4 @@
+import listCommand from "./list.js";
 import startCommand from "./start.js";
 import statusCommand from "./status.js";
 import stopCommand from "./stop.js";
@@ -14,6 +15,7 @@ import type { CommandModule } from "./types.js";
  */
 export const COMMANDS: readonly CommandModule[] = [
     startCommand,
+    listCommand,
     statusCommand,
     stopCommand,
 ];

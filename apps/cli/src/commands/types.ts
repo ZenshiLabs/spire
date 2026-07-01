@@ -1,7 +1,14 @@
 export type CliOptions = {
     title?: string;
-    rootDir: string;
     session?: string;
+    /** Absolute directories to broadcast, from positional args and `--dir`. */
+    dirs: string[];
+    /** Convenience single target: dirs[0] when present, otherwise the cwd. */
+    rootDir: string;
+    /** The directory the CLI was invoked from, used for workspace resolution. */
+    cwd: string;
+    /** Whether `--all` was passed (used by `stop`). */
+    all: boolean;
 };
 
 export type CommandContext = {

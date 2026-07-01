@@ -40,12 +40,17 @@ export function getCommandPromptOptions(): PromptOption[] {
 
 export function parseOptions(runtimeProcess: RuntimeProcessLike): CliOptions {
     const argv = runtimeProcess.argv;
+    const cwd = runtimeProcess.cwd();
     let title: string | undefined;
     let session: string | undefined;
-    let rootDir = runtimeProcess.cwd();
+    let all = false;
+    const dirs: string[] = [];
 
     for (let index = 3; index < argv.length; index += 1) {
         const arg = argv[index];
+        if (!arg) {
+            continue;
+        }
 
         if (arg === "--title") {
             title = argv[index + 1];
@@ -62,16 +67,31 @@ export function parseOptions(runtimeProcess: RuntimeProcessLike): CliOptions {
         if (arg === "--dir") {
             const dir = argv[index + 1];
             if (dir) {
-                rootDir = path.resolve(runtimeProcess.cwd(), dir);
+                dirs.push(path.resolve(cwd, dir));
             }
             index += 1;
+            continue;
+        }
+
+        if (arg === "--all") {
+            all = true;
+            continue;
+        }
+
+        // A bare (non-flag) argument is a positional directory to broadcast,
+        // enabling `spire start ./backend ./frontend`.
+        if (!arg.startsWith("-")) {
+            dirs.push(path.resolve(cwd, arg));
         }
     }
 
     return {
         title,
-        rootDir,
         session,
+        dirs,
+        rootDir: dirs[0] ?? cwd,
+        cwd,
+        all,
     };
 }
 
