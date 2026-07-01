@@ -32,6 +32,10 @@ export const sessions = pgTable(
             .notNull()
             .defaultNow(),
         endedAt: timestamp("ended_at", { withTimezone: true }),
+        // Links sessions started together from one `spire.json` workspace.
+        // Nullable; a future GET /api/groups/:groupId/sessions can surface a
+        // sibling-sessions rail in the viewer.
+        groupId: text("group_id"),
     },
     (table) => [
         // Drizzle's text({ enum }) is a TypeScript-only type; enforce the
@@ -40,6 +44,11 @@ export const sessions = pgTable(
             "sessions_status_chk",
             sql`${table.status} in ('active', 'ended')`
         ),
+        index("sessions_group_id").on(table.groupId),
+        // Serves the cleanup cron: find active sessions gone stale, and ended
+        // sessions past their retention window.
+        index("sessions_status_updated").on(table.status, table.updatedAt),
+        index("sessions_status_ended").on(table.status, table.endedAt),
     ]
 );
 

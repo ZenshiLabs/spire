@@ -33,6 +33,7 @@ function toSessionResponse(row: SessionRow): SessionResponse {
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
         endedAt: row.endedAt ? row.endedAt.toISOString() : null,
+        groupId: row.groupId,
     };
 }
 
@@ -75,6 +76,9 @@ export async function dbUpsertSession(
                 status: "active",
                 updatedAt: now,
                 endedAt: null,
+                // Only overwrite the group link when the caller supplies one, so
+                // reactivating without a workspace keeps the existing grouping.
+                groupId: input.groupId ?? existing.groupId,
             })
             .where(eq(sessions.id, sessionId))
             .returning();
@@ -91,6 +95,7 @@ export async function dbUpsertSession(
             title: input.title ?? sessionId,
             description: input.description ?? null,
             status: "active",
+            groupId: input.groupId ?? null,
         })
         .returning();
     if (!row) {
@@ -118,6 +123,61 @@ export async function dbTouchSession(sessionId: string): Promise<void> {
         .update(sessions)
         .set({ updatedAt: new Date() })
         .where(eq(sessions.id, sessionId));
+}
+
+/**
+ * Marks active sessions whose last activity predates `idleCutoff` as ended,
+ * setting endedAt to their last-seen time. Catches broadcasts whose CLI died
+ * without a clean shutdown so they stop counting as live and become eligible for
+ * retention deletion. Returns the number of sessions affected.
+ */
+export async function dbMarkAbandonedSessions(idleCutoff: Date): Promise<number> {
+    const db = getDb();
+    const rows = await db
+        .update(sessions)
+        .set({ status: "ended", endedAt: sql`${sessions.updatedAt}` })
+        .where(and(eq(sessions.status, "active"), lt(sessions.updatedAt, idleCutoff)))
+        .returning({ id: sessions.id });
+    return rows.length;
+}
+
+/**
+ * Deletes ended sessions whose endedAt predates `expiryCutoff`, in batches to
+ * stay within serverless function time limits. FK cascades prune the session's
+ * snapshots, blobs, checkpoints, changes, and head files. Returns the total
+ * number of sessions removed.
+ */
+export async function dbDeleteExpiredSessions(
+    expiryCutoff: Date,
+    batchSize = 200
+): Promise<number> {
+    const db = getDb();
+    let total = 0;
+    for (;;) {
+        const rows = await db
+            .delete(sessions)
+            .where(
+                inArray(
+                    sessions.id,
+                    db
+                        .select({ id: sessions.id })
+                        .from(sessions)
+                        .where(
+                            and(
+                                eq(sessions.status, "ended"),
+                                lt(sessions.endedAt, expiryCutoff)
+                            )
+                        )
+                        .limit(batchSize)
+                )
+            )
+            .returning({ id: sessions.id });
+        total += rows.length;
+        if (rows.length < batchSize) {
+            break;
+        }
+    }
+    return total;
 }
 
 export async function dbGetSnapshot(
@@ -211,6 +271,41 @@ export async function dbGetBlob(
 export async function dbGetFilesHead(sessionId: string): Promise<FileRow[]> {
     const db = getDb();
     return db.select().from(files).where(eq(files.sessionId, sessionId));
+}
+
+/** Batch head lookup for a set of paths — one query instead of N. */
+export async function dbGetFileHeads(
+    sessionId: string,
+    paths: string[]
+): Promise<FileRow[]> {
+    if (paths.length === 0) {
+        return [];
+    }
+    const db = getDb();
+    return db
+        .select()
+        .from(files)
+        .where(and(eq(files.sessionId, sessionId), inArray(files.path, paths)));
+}
+
+/** Batch blob lookup for a set of hashes — one query instead of N. */
+export async function dbGetBlobs(
+    sessionId: string,
+    hashes: string[]
+): Promise<{ hash: string; content: string; binary: boolean; size: number }[]> {
+    if (hashes.length === 0) {
+        return [];
+    }
+    const db = getDb();
+    return db
+        .select({
+            hash: blobs.hash,
+            content: blobs.content,
+            binary: blobs.binary,
+            size: blobs.size,
+        })
+        .from(blobs)
+        .where(and(eq(blobs.sessionId, sessionId), inArray(blobs.hash, hashes)));
 }
 
 export async function dbGetFileHead(
