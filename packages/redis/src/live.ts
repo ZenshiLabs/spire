@@ -22,6 +22,8 @@ function makeLive(url: string): RedisServiceShape {
         Effect.tryPromise({ try: fn, catch: (cause) => new RedisError({ operation, cause }) });
 
     return {
+        available: true,
+
         get: (key) =>
             wrap("get", () => getPub().get(key)),
 
@@ -33,6 +35,9 @@ function makeLive(url: string): RedisServiceShape {
 
         incr: (key) =>
             wrap("incr", () => getPub().incr(key)),
+
+        expire: (key, ttlSeconds) =>
+            wrap("expire", () => getPub().expire(key, ttlSeconds).then(() => undefined)),
 
         exists: (key) =>
             wrap("exists", async () => (await getPub().exists(key)) > 0),
@@ -49,6 +54,10 @@ function makeLive(url: string): RedisServiceShape {
             const client = new Redis(url, { maxRetriesPerRequest: null });
             sub = client;
             client.on("error", (err: unknown) => console.error("[redis:sub]", err));
+            // ioredis auto-resubscribes to its channels after a reconnect, so we
+            // log the transitions for observability rather than re-driving them.
+            client.on("reconnecting", () => console.warn("[redis:sub] reconnecting"));
+            client.on("end", () => console.warn("[redis:sub] connection ended"));
             // Forward all messages to caller — the caller is responsible for
             // filtering its own published messages via an instanceId it stamps.
             client.on("message", (channel: string, rawPayload: string) => {
@@ -56,7 +65,11 @@ function makeLive(url: string): RedisServiceShape {
             });
             client.subscribe(EVENTS_CHANNEL).catch((err: unknown) => {
                 console.error("[redis:sub] subscribe failed", err);
+                // Tear down the dead client so a retry can build a fresh one
+                // instead of leaking this connection.
                 subscriberStarted = false;
+                sub = null;
+                void client.quit().catch(() => {});
             });
         },
     };
