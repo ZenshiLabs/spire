@@ -60,6 +60,27 @@ export class CheckpointBatcher {
             this.pending.set(absolutePath, merged);
         }
 
+        this.armTimers();
+    }
+
+    /**
+     * Returns a batch of changes to the pending set after a failed upload so they
+     * are retried on the next flush instead of being lost. A newer event that
+     * arrived for the same path while the upload was in flight wins — the caller's
+     * stale change should not clobber it — so existing pending entries are kept.
+     */
+    requeue(changes: Map<string, ChangeKind>) {
+        for (const [absolutePath, kind] of changes) {
+            if (!this.pending.has(absolutePath)) {
+                this.pending.set(absolutePath, kind);
+            }
+        }
+        if (this.pending.size > 0) {
+            this.armTimers();
+        }
+    }
+
+    private armTimers() {
         if (this.idleTimer) {
             clearTimeout(this.idleTimer);
         }
