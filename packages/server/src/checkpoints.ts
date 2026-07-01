@@ -16,11 +16,58 @@ import {
 import { diffLines } from "diff";
 import { Effect } from "effect";
 
-import { nextSeq } from "./cache.js";
+import { nextSeq, resetSeq } from "./cache.js";
 import { fromDb } from "./db.js";
 import { DbError } from "./errors.js";
-import { type CachedBlob, readBlobCached } from "./files.js";
+import { type CachedBlob, readBlobsCached } from "./files.js";
 import { broadcastSessionEvent, emitLocalEvent } from "./pubsub.js";
+
+/** Postgres unique-violation SQLSTATE, raised by the (sessionId, seq) index. */
+const UNIQUE_VIOLATION = "23505";
+
+function isSeqConflict(error: DbError): boolean {
+    const cause = error.cause as { code?: string } | null;
+    return cause?.code === UNIQUE_VIOLATION;
+}
+
+/**
+ * Persists a checkpoint, retrying with a freshly-computed sequence number if a
+ * concurrent writer claimed the same `seq` first. The Redis fast-path counter
+ * (`nextSeq`) can hand out a stale value when it is unavailable or racing —
+ * without Redis both writers fall back to `maxSeq + 1` and collide — so the
+ * unique index on (sessionId, seq) is the correctness backstop and this loop
+ * turns a collision into a retry instead of a dropped checkpoint. Returns the
+ * `seq` that actually landed so callers can build the broadcast payload from it.
+ *
+ * Accepted residual: two CLIs sharing one `--session` still get last-write-wins
+ * on the head-file rows, which is fine for a broadcast tool.
+ */
+const writeCheckpointWithSeqRetry = (
+    sessionId: string,
+    initialSeq: number,
+    buildArgs: (seq: number) => Parameters<typeof DB.dbWriteCheckpoint>[0]
+): Effect.Effect<number, DbError, RedisService> =>
+    Effect.gen(function* () {
+        const maxAttempts = 3;
+        let seq = initialSeq;
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            const result = yield* Effect.either(
+                fromDb("writeCheckpoint", () => DB.dbWriteCheckpoint(buildArgs(seq)))
+            );
+            if (result._tag === "Right") {
+                return seq;
+            }
+            if (!isSeqConflict(result.left) || attempt >= maxAttempts) {
+                return yield* Effect.fail(result.left);
+            }
+            yield* resetSeq(sessionId);
+            const maxSeq = yield* fromDb("getMaxCheckpointSeq", () =>
+                DB.dbGetMaxCheckpointSeq(sessionId)
+            );
+            seq = maxSeq + 1;
+        }
+        return seq;
+    });
 
 const EAGER_MAX_BYTES = Number(process.env.SPIRE_EAGER_MAX_BYTES) || 1.5 * 1024 * 1024;
 const EAGER_MAX_FILES = Number(process.env.SPIRE_EAGER_MAX_FILES) || 400;
@@ -159,84 +206,37 @@ export const buildSessionState = (
     });
 
 /**
- * Computes the diff for a checkpoint upload. Takes Effect-returning adapter
- * seams for head/blob reads so the function composes naturally in the Effect
- * pipeline without Promise bridging, and can be tested with in-memory adapters.
- *
- * All per-entry computations run in parallel via `Effect.all`.
+ * Computes the diff for a checkpoint upload. Takes batch adapter seams for head
+ * and blob reads so the whole calculation issues at most two database round
+ * trips — one for all touched heads, one for all prior blobs needed for line
+ * counts — instead of a read per entry. The seams keep it testable with
+ * in-memory adapters.
  */
 export const calculateCheckpointChanges = (
     entries: CheckpointUpload["entries"],
-    readHead: (
-        path: string
-    ) => Effect.Effect<{ hash: string; binary: boolean } | null, DbError>,
-    readBlob: (
-        hash: string
-    ) => Effect.Effect<CachedBlob | null, DbError, RedisService>
+    readHeads: (
+        paths: string[]
+    ) => Effect.Effect<Map<string, { hash: string; binary: boolean }>, DbError>,
+    readBlobs: (
+        hashes: string[]
+    ) => Effect.Effect<Map<string, CachedBlob>, DbError, RedisService>
 ): Effect.Effect<CheckpointChangeCalculation, DbError, RedisService> =>
     Effect.gen(function* () {
-        const results = yield* Effect.all(
-            entries.map((entry) =>
-                Effect.gen(function* () {
-                    const prior = yield* readHead(entry.path);
+        const heads = yield* readHeads(entries.map((entry) => entry.path));
 
-                    if (entry.changeType === "deleted") {
-                        const beforeHash = prior?.hash ?? null;
-                        let del = 0;
-                        if (prior && !prior.binary && beforeHash) {
-                            const blob = yield* readBlob(beforeHash);
-                            del = blob && !blob.binary ? countLines(blob.content) : 0;
-                        }
-                        return {
-                            entry,
-                            prior,
-                            beforeHash,
-                            kind: "deleted" as const,
-                            add: 0,
-                            del,
-                        };
-                    }
-
-                    const afterHash = entry.hash;
-                    if (!afterHash) {
-                        return {
-                            entry,
-                            prior,
-                            beforeHash: null,
-                            kind: "skip" as const,
-                            add: 0,
-                            del: 0,
-                        };
-                    }
-
-                    const beforeHash = prior?.hash ?? null;
-                    if (prior && prior.hash === afterHash) {
-                        return {
-                            entry,
-                            prior,
-                            beforeHash,
-                            kind: "skip" as const,
-                            add: 0,
-                            del: 0,
-                        };
-                    }
-
-                    let add = 0;
-                    let del = 0;
-                    if (!entry.binary) {
-                        const after = entry.content ?? "";
-                        if (!prior) {
-                            add = countLines(after);
-                        } else {
-                            const before = beforeHash ? yield* readBlob(beforeHash) : null;
-                            ({ add, del } = countDiff(before?.content ?? "", after));
-                        }
-                    }
-                    return { entry, prior, beforeHash, kind: "upsert" as const, add, del };
-                })
-            ),
-            { concurrency: "unbounded" }
-        );
+        // Collect the prior hashes whose content we must read to count deleted
+        // lines: text files that were deleted, or modified against a text prior.
+        const neededHashes = new Set<string>();
+        for (const entry of entries) {
+            const prior = heads.get(entry.path);
+            if (!prior || prior.binary) continue;
+            if (entry.changeType === "deleted") {
+                neededHashes.add(prior.hash);
+            } else if (entry.hash && entry.hash !== prior.hash && !entry.binary) {
+                neededHashes.add(prior.hash);
+            }
+        }
+        const blobs = yield* readBlobs([...neededHashes]);
 
         const changes: CheckpointChange[] = [];
         const headUpserts: HeadUpdate[] = [];
@@ -245,11 +245,16 @@ export const calculateCheckpointChanges = (
         let additions = 0;
         let deletions = 0;
 
-        for (const r of results) {
-            const { entry, prior, beforeHash, kind, add, del } = r;
-            if (kind === "skip") continue;
+        for (const entry of entries) {
+            const prior = heads.get(entry.path) ?? null;
+            const beforeHash = prior?.hash ?? null;
 
-            if (kind === "deleted") {
+            if (entry.changeType === "deleted") {
+                let del = 0;
+                if (prior && !prior.binary && beforeHash) {
+                    const blob = blobs.get(beforeHash);
+                    del = blob && !blob.binary ? countLines(blob.content) : 0;
+                }
                 deletions += del;
                 headDeletes.push(entry.path);
                 changes.push({
@@ -264,7 +269,24 @@ export const calculateCheckpointChanges = (
                 continue;
             }
 
-            const afterHash = entry.hash!;
+            const afterHash = entry.hash;
+            // No content hash, or unchanged from the current head: nothing to do.
+            if (!afterHash || (prior && prior.hash === afterHash)) {
+                continue;
+            }
+
+            let add = 0;
+            let del = 0;
+            if (!entry.binary) {
+                const after = entry.content ?? "";
+                if (!prior) {
+                    add = countLines(after);
+                } else {
+                    const before = beforeHash ? blobs.get(beforeHash) : undefined;
+                    ({ add, del } = countDiff(before?.content ?? "", after));
+                }
+            }
+
             if (!newBlobs.has(afterHash)) {
                 newBlobs.set(afterHash, {
                     hash: afterHash,
@@ -379,31 +401,25 @@ export const ingestSnapshot = (
             { concurrency: "unbounded" }
         );
 
-        // Diff every incoming file against its prior blob in parallel.
-        const incomingResults = yield* Effect.all(
-            incoming.map((f) =>
-                Effect.gen(function* () {
-                    const prior = priorByPath.get(f.path);
-                    if (!prior) {
-                        const add = f.binary ? 0 : countLines(f.content);
-                        return { f, prior, add, del: 0, kind: "added" as const };
-                    }
-                    if (prior.hash === f.hash) {
-                        return { f, prior, add: 0, del: 0, kind: "unchanged" as const };
-                    }
-                    let add = 0;
-                    let del = 0;
-                    if (!f.binary && !prior.binary) {
-                        const before = yield* fromDb("getBlob", () =>
-                            DB.dbGetBlob(sessionId, prior.hash)
-                        );
-                        ({ add, del } = countDiff(before?.content ?? "", f.content));
-                    }
-                    return { f, prior, add, del, kind: "modified" as const };
-                })
-            ),
-            { concurrency: "unbounded" }
-        );
+        // Count lines deleted from files no longer present in the snapshot.
+        const deletedPriors = priorHead.filter((p: HeadFile) => !incomingPaths.has(p.path));
+
+        // Collect every prior hash whose text content we need to count line
+        // deltas — modified text files and deleted text files — then fetch them
+        // all in one batched, cache-backed read instead of one query per file.
+        const priorHashesNeeded = new Set<string>();
+        for (const f of incoming) {
+            const prior = priorByPath.get(f.path);
+            if (prior && prior.hash !== f.hash && !f.binary && !prior.binary) {
+                priorHashesNeeded.add(prior.hash);
+            }
+        }
+        for (const prior of deletedPriors) {
+            if (!prior.binary) {
+                priorHashesNeeded.add(prior.hash);
+            }
+        }
+        const priorBlobs = yield* readBlobsCached(sessionId, [...priorHashesNeeded]);
 
         const changes: CheckpointChange[] = [];
         const headUpserts: HeadUpdate[] = [];
@@ -411,8 +427,23 @@ export const ingestSnapshot = (
         let additions = 0;
         let deletions = 0;
 
-        for (const r of incomingResults) {
-            const { f, prior, add, del, kind } = r;
+        for (const f of incoming) {
+            const prior = priorByPath.get(f.path);
+            let add = 0;
+            let del = 0;
+            let kind: "added" | "modified" | "unchanged";
+            if (!prior) {
+                add = f.binary ? 0 : countLines(f.content);
+                kind = "added";
+            } else if (prior.hash === f.hash) {
+                kind = "unchanged";
+            } else {
+                if (!f.binary && !prior.binary) {
+                    const before = priorBlobs.get(prior.hash);
+                    ({ add, del } = countDiff(before?.content ?? "", f.content));
+                }
+                kind = "modified";
+            }
             if (kind === "unchanged") continue;
             additions += add;
             deletions += del;
@@ -428,25 +459,14 @@ export const ingestSnapshot = (
             });
         }
 
-        // Count lines deleted from files no longer in the snapshot.
-        const deletedPriors = priorHead.filter((p: HeadFile) => !incomingPaths.has(p.path));
-        const deletedResults = yield* Effect.all(
-            deletedPriors.map((prior: HeadFile) =>
-                Effect.gen(function* () {
-                    let del = 0;
-                    if (!prior.binary) {
-                        const blob = yield* fromDb("getBlob", () =>
-                            DB.dbGetBlob(sessionId, prior.hash)
-                        );
-                        del = blob && !blob.binary ? countLines(blob.content) : 0;
-                    }
-                    return { prior, del };
-                })
-            ),
-            { concurrency: "unbounded" }
-        );
-
-        for (const { prior, del } of deletedResults) {
+        // Emit deletions for files no longer in the snapshot, using the batched
+        // prior blobs fetched above for line counts.
+        for (const prior of deletedPriors) {
+            let del = 0;
+            if (!prior.binary) {
+                const blob = priorBlobs.get(prior.hash);
+                del = blob && !blob.binary ? countLines(blob.content) : 0;
+            }
             deletions += del;
             headDeletes.push(prior.path);
             changes.push({
@@ -471,23 +491,22 @@ export const ingestSnapshot = (
         };
 
         if (changes.length > 0) {
-            const seq = (yield* nextSeq(sessionId, () => Promise.resolve(maxSeq))) ?? maxSeq + 1;
+            const initialSeq =
+                (yield* nextSeq(sessionId, () => Promise.resolve(maxSeq))) ?? maxSeq + 1;
             const label = isNew ? "Initial snapshot" : "Resumed session";
-            yield* fromDb("writeCheckpoint", () =>
-                DB.dbWriteCheckpoint({
-                    sessionId,
-                    seq,
-                    label,
-                    createdAt: now,
-                    additions,
-                    deletions,
-                    filesChanged: changes.length,
-                    changes,
-                    headUpserts,
-                    headDeletes,
-                    newBlobs: [],
-                })
-            );
+            const seq = yield* writeCheckpointWithSeqRetry(sessionId, initialSeq, (s) => ({
+                sessionId,
+                seq: s,
+                label,
+                createdAt: now,
+                additions,
+                deletions,
+                filesChanged: changes.length,
+                changes,
+                headUpserts,
+                headDeletes,
+                newBlobs: [],
+            }));
             yield* broadcastSessionEvent(sessionId, snapshotEvent);
             emitLocalEvent(sessionId, {
                 type: "checkpoint",
@@ -525,8 +544,19 @@ export const ingestCheckpoint = (
         const { changes, headUpserts, headDeletes, newBlobs, additions, deletions } =
             yield* calculateCheckpointChanges(
                 payload.entries,
-                (path) => fromDb("getFileHead", () => DB.dbGetFileHead(sessionId, path)),
-                (hash) => readBlobCached(sessionId, hash)
+                (paths) =>
+                    fromDb("getFileHeads", () => DB.dbGetFileHeads(sessionId, paths)).pipe(
+                        Effect.map(
+                            (rows) =>
+                                new Map(
+                                    rows.map((row) => [
+                                        row.path,
+                                        { hash: row.hash, binary: row.binary },
+                                    ])
+                                )
+                        )
+                    ),
+                (hashes) => readBlobsCached(sessionId, hashes)
             );
 
         if (changes.length === 0) return { ok: true as const };
@@ -534,8 +564,32 @@ export const ingestCheckpoint = (
         const maxSeq = yield* fromDb("getMaxCheckpointSeq", () =>
             DB.dbGetMaxCheckpointSeq(sessionId)
         );
-        const seq = (yield* nextSeq(sessionId, () => Promise.resolve(maxSeq))) ?? maxSeq + 1;
+        const initialSeq = (yield* nextSeq(sessionId, () => Promise.resolve(maxSeq))) ?? maxSeq + 1;
         const label = buildLabel(changes);
+
+        // Persist checkpoint (retrying on a seq collision) and bump the session
+        // timestamp in parallel. The broadcast payload is built afterwards from
+        // the seq that actually landed, which may differ from initialSeq.
+        const [seq] = yield* Effect.all(
+            [
+                writeCheckpointWithSeqRetry(sessionId, initialSeq, (s) => ({
+                    sessionId,
+                    seq: s,
+                    label,
+                    createdAt: now,
+                    additions,
+                    deletions,
+                    filesChanged: changes.length,
+                    changes,
+                    headUpserts,
+                    headDeletes,
+                    newBlobs: [...newBlobs.values()],
+                })),
+                fromDb("touchSession", () => DB.dbTouchSession(sessionId)),
+            ],
+            { concurrency: "unbounded" }
+        );
+
         const checkpoint: Checkpoint = {
             sessionId,
             seq,
@@ -546,29 +600,6 @@ export const ingestCheckpoint = (
             deletions,
             changes,
         };
-
-        // Persist checkpoint and bump session timestamp in parallel.
-        yield* Effect.all(
-            [
-                fromDb("writeCheckpoint", () =>
-                    DB.dbWriteCheckpoint({
-                        sessionId,
-                        seq,
-                        label,
-                        createdAt: now,
-                        additions,
-                        deletions,
-                        filesChanged: changes.length,
-                        changes,
-                        headUpserts,
-                        headDeletes,
-                        newBlobs: [...newBlobs.values()],
-                    })
-                ),
-                fromDb("touchSession", () => DB.dbTouchSession(sessionId)),
-            ],
-            { concurrency: "unbounded" }
-        );
 
         yield* broadcastSessionEvent(sessionId, { type: "checkpoint", payload: checkpoint });
 

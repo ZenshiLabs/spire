@@ -4,9 +4,13 @@ export {
     getSessionById,
     upsertSession,
     touchSession,
+    getSessionManifest,
     isSessionStale,
     endSession,
+    cleanupSessions,
     type EndSessionResult,
+    type TouchSessionResult,
+    type CleanupResult,
 } from "./sessions.js";
 
 export { getFileContent } from "./files.js";

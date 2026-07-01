@@ -29,6 +29,38 @@ export const readBlobCached = (
         return value;
     });
 
+/**
+ * Reads many blobs through the cache in one shot: serves hits from cache and
+ * batch-fetches the misses in a single DB query (instead of one query per
+ * hash), writing each miss back through. Returns a hash → blob map; hashes with
+ * no stored blob are simply absent.
+ */
+export const readBlobsCached = (
+    sessionId: string,
+    hashes: string[]
+): Effect.Effect<Map<string, CachedBlob>, DbError, RedisService> =>
+    Effect.gen(function* () {
+        const result = new Map<string, CachedBlob>();
+        const misses: string[] = [];
+        for (const hash of new Set(hashes)) {
+            const cached = yield* cacheGet<CachedBlob>(blobKey(sessionId, hash));
+            if (cached) {
+                result.set(hash, cached);
+            } else {
+                misses.push(hash);
+            }
+        }
+        if (misses.length > 0) {
+            const rows = yield* fromDb("getBlobs", () => DB.dbGetBlobs(sessionId, misses));
+            for (const row of rows) {
+                const value: CachedBlob = { content: row.content, binary: row.binary };
+                result.set(row.hash, value);
+                yield* cacheSet(blobKey(sessionId, row.hash), value, BLOB_CACHE_TTL);
+            }
+        }
+        return result;
+    });
+
 export const getFileContent = (
     sessionId: string,
     path: string,
