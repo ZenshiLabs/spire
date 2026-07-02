@@ -26,9 +26,37 @@ import { JoinForm } from "./join-form";
 
 const GITHUB_URL = "https://github.com/anishshobithps/spire";
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+
+/** Structured data so search engines can render a rich software-app result. */
+const JSON_LD = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      name: "Spire",
+      applicationCategory: "DeveloperApplication",
+      operatingSystem: "Windows, macOS, Linux",
+      description:
+        "Broadcast the files you're working on to a browser tab. Run one command, share the link, and anyone can follow along as you save.",
+      url: SITE_URL,
+      offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    },
+    {
+      "@type": "Organization",
+      name: "ZenshiLabs",
+      url: SITE_URL,
+    },
+  ],
+};
+
 export default function Home() {
   return (
     <div className="relative flex min-h-svh flex-col">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
+      />
       <SiteHeader />
       <main className="flex-1">
         <Hero />

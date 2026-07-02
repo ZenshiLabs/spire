@@ -4,6 +4,7 @@ import { baseName, type CheckpointChange } from "@spire/types";
 import { useFileTreeStore } from "@spire/stores/file-tree-store";
 import { useHistoryStore } from "@spire/stores/history-store";
 import { ArrowUpIcon } from "lucide-react";
+import { memo, useCallback } from "react";
 
 import { FileTypeIcon } from "@/components/file-icon";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,61 @@ import { CHANGE_META, dirName, formatRelativeTime } from "@/lib/change-meta";
 import { fetchCheckpoint } from "@/lib/session-api";
 import { decorationsFromChanges } from "@/lib/use-session-stream";
 import { cn } from "@/lib/utils";
+
+type CheckpointRowProps = {
+    seq: number;
+    label: string;
+    createdAt: string;
+    filesChanged: number;
+    additions: number;
+    deletions: number;
+    selected: boolean;
+    onSelect: (seq: number) => void;
+};
+
+/**
+ * A single timeline entry. Memoized on primitive props so a live checkpoint
+ * prepended to the list only mounts the new row — existing rows keep identical
+ * props and skip re-render — rather than re-rendering the whole timeline on
+ * every incoming save-burst.
+ */
+const CheckpointRow = memo(function CheckpointRow({
+    seq,
+    label,
+    createdAt,
+    filesChanged,
+    additions,
+    deletions,
+    selected,
+    onSelect,
+}: CheckpointRowProps) {
+    return (
+        <Button
+            variant="ghost"
+            onClick={() => onSelect(seq)}
+            className={cn(
+                "hover:bg-accent/50 h-auto w-full flex-col items-start gap-0.5 rounded-none px-3 py-2 transition-colors",
+                selected && "bg-accent/60"
+            )}
+        >
+            <div className="flex w-full items-center gap-2">
+                <span className="truncate text-sm font-medium">{label}</span>
+                <span className="text-muted-foreground ml-auto shrink-0 text-[11px]">
+                    {formatRelativeTime(createdAt)}
+                </span>
+            </div>
+            <div className="text-muted-foreground flex items-center gap-2 font-mono text-[11px]">
+                <span>
+                    {filesChanged} file{filesChanged === 1 ? "" : "s"}
+                </span>
+                {additions > 0 && (
+                    <span className="text-emerald-500">+{additions}</span>
+                )}
+                {deletions > 0 && <span className="text-red-500">−{deletions}</span>}
+            </div>
+        </Button>
+    );
+});
 
 export function HistoryPanel({
     sessionId,
@@ -30,30 +86,35 @@ export function HistoryPanel({
         state.selectedSeq !== null ? state.bySeq.get(state.selectedSeq) : undefined
     );
 
-    const onSelect = async (seq: number) => {
-        const history = useHistoryStore.getState();
-        if (history.selectedSeq === seq) {
-            history.selectSeq(null);
-            useFileTreeStore.getState().setDecorations(new Map());
-            onSelectChange(null);
-            return;
-        }
-        history.selectSeq(seq);
-        onSelectChange(null);
-        let checkpoint = history.bySeq.get(seq);
-        if (!checkpoint) {
-            try {
-                checkpoint = await fetchCheckpoint(sessionId, seq);
-                useHistoryStore.getState().cacheCheckpoint(checkpoint);
-            } catch {
+    const onSelect = useCallback(
+        async (seq: number) => {
+            const history = useHistoryStore.getState();
+            if (history.selectedSeq === seq) {
+                history.selectSeq(null);
+                useFileTreeStore.getState().setDecorations(new Map());
+                onSelectChange(null);
                 return;
             }
-        }
-        useFileTreeStore.getState().setDecorations(decorationsFromChanges(checkpoint.changes));
-        if (checkpoint.changes.length > 0) {
-            onSelectChange(checkpoint.changes[0] ?? null);
-        }
-    };
+            history.selectSeq(seq);
+            onSelectChange(null);
+            let checkpoint = history.bySeq.get(seq);
+            if (!checkpoint) {
+                try {
+                    checkpoint = await fetchCheckpoint(sessionId, seq);
+                    useHistoryStore.getState().cacheCheckpoint(checkpoint);
+                } catch {
+                    return;
+                }
+            }
+            useFileTreeStore.getState().setDecorations(decorationsFromChanges(checkpoint.changes));
+            if (checkpoint.changes.length > 0) {
+                onSelectChange(checkpoint.changes[0] ?? null);
+            }
+        },
+        [sessionId, onSelectChange]
+    );
+
+    const handleSelect = useCallback((seq: number) => void onSelect(seq), [onSelect]);
 
     const jumpToLatest = () => {
         useHistoryStore.getState().selectSeq(null);
@@ -89,39 +150,16 @@ export function HistoryPanel({
                             const selected = selectedSeq === checkpoint.seq;
                             return (
                                 <li key={checkpoint.seq} className="border-b">
-                                    <Button
-                                        variant="ghost"
-                                        onClick={() => void onSelect(checkpoint.seq)}
-                                        className={cn(
-                                            "hover:bg-accent/50 h-auto w-full flex-col items-start gap-0.5 rounded-none px-3 py-2 transition-colors",
-                                            selected && "bg-accent/60"
-                                        )}
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            <span className="truncate text-sm font-medium">
-                                                {checkpoint.label}
-                                            </span>
-                                            <span className="text-muted-foreground ml-auto shrink-0 text-[11px]">
-                                                {formatRelativeTime(checkpoint.createdAt)}
-                                            </span>
-                                        </div>
-                                        <div className="text-muted-foreground flex items-center gap-2 font-mono text-[11px]">
-                                            <span>
-                                                {checkpoint.filesChanged} file
-                                                {checkpoint.filesChanged === 1 ? "" : "s"}
-                                            </span>
-                                            {checkpoint.additions > 0 && (
-                                                <span className="text-emerald-500">
-                                                    +{checkpoint.additions}
-                                                </span>
-                                            )}
-                                            {checkpoint.deletions > 0 && (
-                                                <span className="text-red-500">
-                                                    −{checkpoint.deletions}
-                                                </span>
-                                            )}
-                                        </div>
-                                    </Button>
+                                    <CheckpointRow
+                                        seq={checkpoint.seq}
+                                        label={checkpoint.label}
+                                        createdAt={checkpoint.createdAt}
+                                        filesChanged={checkpoint.filesChanged}
+                                        additions={checkpoint.additions}
+                                        deletions={checkpoint.deletions}
+                                        selected={selected}
+                                        onSelect={handleSelect}
+                                    />
 
                                     {selected && (
                                         <div className="border-t">

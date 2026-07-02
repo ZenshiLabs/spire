@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ChangeType, CheckpointChange, SSEEvent } from "@spire/types";
 import { useEditorStore } from "@spire/stores/editor-store";
 import { useFileTreeStore } from "@spire/stores/file-tree-store";
@@ -30,6 +30,8 @@ export const STATUS_DOT: Record<StreamStatus, string> = {
 type StreamResult = {
     status: StreamStatus;
     error: string | null;
+    /** Tears down and re-establishes the connection — for a manual retry button. */
+    retry: () => void;
 };
 
 export function decorationsFromChanges(
@@ -133,6 +135,8 @@ export function hydrateStoresFromState(
 export function useSessionStream(sessionId: string): StreamResult {
     const [status, setStatus] = useState<StreamStatus>("connecting");
     const [error, setError] = useState<string | null>(null);
+    // Bumping this re-runs the effect below: full teardown + re-hydrate + resubscribe.
+    const [retryNonce, setRetryNonce] = useState(0);
 
     useEffect(() => {
         const sessionStore = useSessionStore.getState();
@@ -228,7 +232,13 @@ export function useSessionStream(sessionId: string): StreamResult {
             useSessionStore.getState().clearSession();
             contentCache.clear();
         };
-    }, [sessionId]);
+    }, [sessionId, retryNonce]);
 
-    return { status, error };
+    const retry = useCallback(() => {
+        setError(null);
+        setStatus("connecting");
+        setRetryNonce((nonce) => nonce + 1);
+    }, []);
+
+    return { status, error, retry };
 }

@@ -14,10 +14,43 @@ const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
 });
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+const title = "Spire — Live code sharing without a screen share";
+const description =
+  "Broadcast the files you're working on to a browser tab. Run one command, share the link, and anyone can follow along as you save — read-only, syntax-highlighted, no account or install.";
+
 export const metadata: Metadata = {
-  title: "Spire — Live code sharing without a screen share",
-  description:
-    "Broadcast the files you're working on to a browser tab. Run one command, share the link, and anyone can follow along as you save — read-only, syntax-highlighted, no account or install.",
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: title,
+    template: "%s — Spire",
+  },
+  description,
+  applicationName: "Spire",
+  keywords: [
+    "live code sharing",
+    "pair programming",
+    "screen share alternative",
+    "real-time code",
+    "code broadcast",
+    "teaching",
+    "mentoring",
+    "developer tools",
+  ],
+  authors: [{ name: "ZenshiLabs" }],
+  openGraph: {
+    type: "website",
+    siteName: "Spire",
+    title,
+    description,
+    url: siteUrl,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
+  },
+  robots: { index: true, follow: true },
 };
 
 export default function RootLayout({
