@@ -24,7 +24,7 @@ function encodeSSEData(event: SSEEvent) {
     return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
 }
 
-export const GET = routeHandler(async (_request: Request, context: RouteContext) => {
+export const GET = routeHandler(async (request: Request, context: RouteContext) => {
     const { sessionId } = await Promise.resolve(context.params);
     const session = await run(getSessionById(sessionId));
 
@@ -50,11 +50,41 @@ export const GET = routeHandler(async (_request: Request, context: RouteContext)
     const stream = new ReadableStream<Uint8Array>({
         async start(controller) {
             const encoder = new TextEncoder();
-            controller.enqueue(encoder.encode(encodeSSEData(buildConnectedEvent(sessionId))));
+
+            // Enqueue guarded against a controller closed by an abrupt client
+            // disconnect: any throw tears the subscription and interval down
+            // instead of leaking them for the life of the process.
+            const safeEnqueue = (chunk: string): boolean => {
+                try {
+                    controller.enqueue(encoder.encode(chunk));
+                    return true;
+                } catch {
+                    cleanup();
+                    try {
+                        controller.close();
+                    } catch {
+                        // Already closed — nothing more to do.
+                    }
+                    return false;
+                }
+            };
+
+            // Next's cancel() is not always invoked on an abrupt disconnect;
+            // the request abort signal is the reliable teardown trigger.
+            request.signal.addEventListener("abort", () => {
+                cleanup();
+                try {
+                    controller.close();
+                } catch {
+                    // Already closed.
+                }
+            });
+
+            safeEnqueue(encodeSSEData(buildConnectedEvent(sessionId)));
 
             unsubscribe = await run(
                 subscribeToSession(sessionId, (event) => {
-                    controller.enqueue(encoder.encode(encodeSSEData(event)));
+                    safeEnqueue(encodeSSEData(event));
                 })
             );
 
@@ -64,22 +94,34 @@ export const GET = routeHandler(async (_request: Request, context: RouteContext)
                         isSessionStale(sessionId).pipe(Effect.orElseSucceed(() => true))
                     );
                     if (stale) {
-                        controller.enqueue(
-                            encoder.encode(
-                                encodeSSEData({
-                                    type: "session_ended",
-                                    sessionId,
-                                    timestamp: Date.now(),
-                                })
-                            )
+                        safeEnqueue(
+                            encodeSSEData({
+                                type: "session_ended",
+                                sessionId,
+                                timestamp: Date.now(),
+                            })
                         );
                         cleanup();
-                        controller.close();
+                        try {
+                            controller.close();
+                        } catch {
+                            // Already closed.
+                        }
                         return;
                     }
-                    controller.enqueue(encoder.encode(`: keepalive ${Date.now()}\n\n`));
+                    // Drop the keepalive when the client is not draining (a slow
+                    // or stalled reader) so bytes do not buffer unbounded; real
+                    // events still flow and session_ended is never dropped.
+                    if (controller.desiredSize === null || controller.desiredSize > 0) {
+                        safeEnqueue(`: keepalive ${Date.now()}\n\n`);
+                    }
                 } catch {
                     cleanup();
+                    try {
+                        controller.close();
+                    } catch {
+                        // Already closed.
+                    }
                 }
             };
 
