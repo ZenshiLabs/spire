@@ -22,6 +22,13 @@
       "when": 1782972449507,
       "tag": "0002_clumsy_jackal",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783454119370,
+      "tag": "0003_cooing_reptil",
+      "breakpoints": true
     }
   ]
 }

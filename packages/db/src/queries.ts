@@ -12,6 +12,7 @@ import { HASH_RE } from "@spire/types";
 import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 
 import { getDb } from "./client.js";
+import { compressBlob, decompressBlob } from "./compression.js";
 import {
     blobs,
     checkpointChanges,
@@ -235,6 +236,22 @@ export type BlobInput = {
  */
 const BLOB_CHUNK = 100;
 
+/**
+ * Encodes a blob for insertion: compresses the content and records the codec.
+ * `hash` and `size` stay tied to the raw content, so dedup is unchanged.
+ */
+async function toBlobRow(sessionId: string, input: BlobInput) {
+    const { data, compression } = await compressBlob(input.content);
+    return {
+        sessionId,
+        hash: input.hash,
+        content: data,
+        compression,
+        size: input.size,
+        binary: input.binary,
+    };
+}
+
 export async function dbUpsertBlobs(
     sessionId: string,
     inputs: BlobInput[]
@@ -243,12 +260,10 @@ export async function dbUpsertBlobs(
         return;
     }
     const db = getDb();
-    for (let i = 0; i < inputs.length; i += BLOB_CHUNK) {
-        const chunk = inputs.slice(i, i + BLOB_CHUNK);
-        await db
-            .insert(blobs)
-            .values(chunk.map((b) => ({ sessionId, ...b })))
-            .onConflictDoNothing();
+    const rows = await Promise.all(inputs.map((b) => toBlobRow(sessionId, b)));
+    for (let i = 0; i < rows.length; i += BLOB_CHUNK) {
+        const chunk = rows.slice(i, i + BLOB_CHUNK);
+        await db.insert(blobs).values(chunk).onConflictDoNothing();
     }
 }
 
@@ -260,13 +275,18 @@ export async function dbGetBlob(
     const [row] = await db
         .select({
             content: blobs.content,
+            compression: blobs.compression,
             binary: blobs.binary,
             size: blobs.size,
         })
         .from(blobs)
         .where(and(eq(blobs.sessionId, sessionId), eq(blobs.hash, hash)))
         .limit(1);
-    return row ?? null;
+    if (!row) {
+        return null;
+    }
+    const content = await decompressBlob(row.content, row.compression);
+    return { content, binary: row.binary, size: row.size };
 }
 
 export async function dbGetFilesHead(sessionId: string): Promise<FileRow[]> {
@@ -298,15 +318,24 @@ export async function dbGetBlobs(
         return [];
     }
     const db = getDb();
-    return db
+    const rows = await db
         .select({
             hash: blobs.hash,
             content: blobs.content,
+            compression: blobs.compression,
             binary: blobs.binary,
             size: blobs.size,
         })
         .from(blobs)
         .where(and(eq(blobs.sessionId, sessionId), inArray(blobs.hash, hashes)));
+    return Promise.all(
+        rows.map(async (row) => ({
+            hash: row.hash,
+            content: await decompressBlob(row.content, row.compression),
+            binary: row.binary,
+            size: row.size,
+        }))
+    );
 }
 
 export async function dbGetFileHead(
@@ -365,6 +394,12 @@ export async function dbWriteCheckpoint(args: {
     const db = getDb();
     const { sessionId, seq } = args;
 
+    // Compress up front: the batch is assembled synchronously, so blob encoding
+    // (async) must complete before we build the insert op.
+    const newBlobRows = await Promise.all(
+        args.newBlobs.map((b) => toBlobRow(sessionId, b))
+    );
+
     const ops: unknown[] = [
         db.insert(checkpoints).values({
             sessionId,
@@ -377,13 +412,8 @@ export async function dbWriteCheckpoint(args: {
         }),
     ];
 
-    if (args.newBlobs.length > 0) {
-        ops.push(
-            db
-                .insert(blobs)
-                .values(args.newBlobs.map((b) => ({ sessionId, ...b })))
-                .onConflictDoNothing()
-        );
+    if (newBlobRows.length > 0) {
+        ops.push(db.insert(blobs).values(newBlobRows).onConflictDoNothing());
     }
 
     if (args.changes.length > 0) {
@@ -649,7 +679,11 @@ export async function dbGetHeadContents(
 ): Promise<Record<string, string>> {
     const db = getDb();
     const rows = await db
-        .select({ hash: blobs.hash, content: blobs.content })
+        .select({
+            hash: blobs.hash,
+            content: blobs.content,
+            compression: blobs.compression,
+        })
         .from(files)
         .innerJoin(
             blobs,
@@ -657,8 +691,10 @@ export async function dbGetHeadContents(
         )
         .where(and(eq(files.sessionId, sessionId), eq(blobs.binary, false)));
     const map: Record<string, string> = {};
-    for (const row of rows) {
-        map[row.hash] = row.content;
-    }
+    await Promise.all(
+        rows.map(async (row) => {
+            map[row.hash] = await decompressBlob(row.content, row.compression);
+        })
+    );
     return map;
 }

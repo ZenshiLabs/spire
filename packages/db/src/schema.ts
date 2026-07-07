@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import {
     boolean,
     check,
+    customType,
     foreignKey,
     index,
     integer,
@@ -14,6 +15,33 @@ import {
     timestamp,
     unique,
 } from "drizzle-orm/pg-core";
+
+/**
+ * Postgres `bytea` column mapped to a Node `Buffer`. drizzle-orm has no native
+ * bytea helper. Values are sent to the driver as a hex string (`\x…`), which
+ * Postgres' bytea input accepts; Neon's HTTP driver returns bytea as that same
+ * hex-string form, so we decode it back to a Buffer on read (and pass Buffers
+ * through unchanged, in case a driver ever hands one back directly).
+ */
+const bytea = customType<{ data: Buffer; driverData: string | Uint8Array }>({
+    dataType() {
+        return "bytea";
+    },
+    toDriver(value: Buffer): string {
+        return "\\x" + value.toString("hex");
+    },
+    fromDriver(value: string | Uint8Array): Buffer {
+        // Neon's HTTP driver returns bytea as a hex string ("\\x…"); guard the
+        // other shapes a driver could hand back (a Buffer, or a bare typed
+        // array) so reads never depend on one exact representation.
+        if (typeof value === "string") {
+            return value.startsWith("\\x")
+                ? Buffer.from(value.slice(2), "hex")
+                : Buffer.from(value, "binary");
+        }
+        return Buffer.isBuffer(value) ? value : Buffer.from(value);
+    },
+});
 
 /** Broadcast sessions. Mirrors the shape of SessionResponse. */
 export const sessions = pgTable(
@@ -79,6 +107,12 @@ export const snapshots = pgTable(
  * once and referenced by hash from snapshots, files, and checkpoint changes —
  * so re-saving a file to a prior state costs nothing. Binary files are recorded
  * with `binary = true` and empty content (their bytes are never embedded).
+ *
+ * `content` holds the stored bytes; `compression` records how they are encoded
+ * (`"none"` = raw UTF-8, `"br"` = brotli). Both are transparent to callers —
+ * the queries layer compresses on write and decodes back to a string on read.
+ * `hash` and `size` always describe the raw (uncompressed) content, so dedup
+ * and reported sizes are unaffected by the encoding.
  */
 export const blobs = pgTable(
     "blobs",
@@ -87,7 +121,10 @@ export const blobs = pgTable(
             .notNull()
             .references(() => sessions.id, { onDelete: "cascade" }),
         hash: text("hash").notNull(),
-        content: text("content").notNull(),
+        content: bytea("content").notNull(),
+        compression: text("compression", { enum: ["none", "br"] })
+            .notNull()
+            .default("none"),
         size: integer("size").notNull(),
         binary: boolean("binary").notNull().default(false),
     },
