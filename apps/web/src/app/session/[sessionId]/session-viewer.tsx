@@ -133,6 +133,10 @@ export function SessionViewer({ sessionId }: { sessionId: string }) {
     setSelectedChange(change);
   }, []);
 
+  const handleOpenTimeline = useCallback(() => {
+    setView("timeline");
+  }, []);
+
   const handleViewChange = useCallback((next: ActivityView) => {
     setView(next);
     // On mobile the panels live in a Sheet; surface it when the rail is used.
@@ -239,7 +243,7 @@ export function SessionViewer({ sessionId }: { sessionId: string }) {
           view === "explorer" ? (
             <FileTree
               sessionId={sessionId}
-              onOpenTimeline={() => setView("timeline")}
+              onOpenTimeline={handleOpenTimeline}
             />
           ) : (
             <HistoryPanel

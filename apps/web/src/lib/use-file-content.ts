@@ -64,7 +64,11 @@ export function useFileContent(
 
         let cancelled = false;
         const controller = new AbortController();
-        setState((prev) => ({ ...prev, loading: true, error: null }));
+        setState((prev) =>
+            prev.loading && prev.error === null
+                ? prev
+                : { ...prev, loading: true, error: null }
+        );
 
         fetchFileContent(sessionId, path, ref, controller.signal)
             .then((result) => {

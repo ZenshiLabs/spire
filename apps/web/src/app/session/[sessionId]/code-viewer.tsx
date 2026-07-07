@@ -48,8 +48,9 @@ export function CodeViewer({ sessionId }: { sessionId: string }) {
   const prevTabs = useRef<string[]>([]);
   useEffect(() => {
     if (monaco) {
+      const current = new Set(tabs);
       for (const path of prevTabs.current) {
-        if (!tabs.includes(path)) {
+        if (!current.has(path)) {
           monaco.editor.getModel(monaco.Uri.parse(path))?.dispose();
         }
       }

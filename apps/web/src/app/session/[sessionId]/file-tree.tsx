@@ -5,7 +5,7 @@ import type { FileNode } from "@spire/types";
 import { useEditorStore } from "@spire/stores/editor-store";
 import { useFileTreeStore } from "@spire/stores/file-tree-store";
 import { ChevronRight, ClockIcon, CopyIcon, DownloadIcon } from "lucide-react";
-import { memo, useRef } from "react";
+import { memo, useCallback, useRef } from "react";
 
 import { FileTypeIcon } from "@/components/file-icon";
 import {
@@ -44,7 +44,8 @@ async function withContent(
     }
 }
 
-const DirectoryRow = memo(function DirectoryRow({
+const DirectoryRow = memo(
+function DirectoryRow({
     node,
     depth,
     expanded,
@@ -94,7 +95,14 @@ const DirectoryRow = memo(function DirectoryRow({
             <span className="truncate">{node.name}</span>
         </Button>
     );
-});
+},
+(prev, next) =>
+    prev.node.path === next.node.path &&
+    prev.node.name === next.node.name &&
+    prev.depth === next.depth &&
+    prev.expanded === next.expanded &&
+    prev.onToggle === next.onToggle
+);
 
 const FileRow = memo(function FileRow({
     node,
@@ -115,10 +123,10 @@ const FileRow = memo(function FileRow({
     const indent = { paddingLeft: `${depth * 12 + 6}px` };
     const meta = CHANGE_META[decoration ?? "modified"];
 
-    const open = () => {
+    const open = useCallback(() => {
         openFile(node.path);
         setSelectedPath(node.path);
-    };
+    }, [openFile, setSelectedPath, node.path]);
 
     return (
         <ContextMenu>
@@ -212,7 +220,15 @@ const FileRow = memo(function FileRow({
             </ContextMenuContent>
         </ContextMenu>
     );
-});
+},
+(prev, next) =>
+    prev.node.path === next.node.path &&
+    prev.node.hash === next.node.hash &&
+    prev.depth === next.depth &&
+    prev.active === next.active &&
+    prev.sessionId === next.sessionId &&
+    prev.onOpenTimeline === next.onOpenTimeline
+);
 
 export function FileTree({
     sessionId,

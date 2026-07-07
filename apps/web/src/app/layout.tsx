@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
 import { ThemeProvider } from "@/components/theme-provider";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -60,6 +61,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Suppress Monaco language-service cancelation rejections before the
+            Next.js dev overlay installs its unhandledrejection handler. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `window.addEventListener('unhandledrejection',function(e){var r=e.reason;if(r&&typeof r==='object'&&r.type==='cancelation'){e.preventDefault();e.stopImmediatePropagation();}},{capture:true});`,
+          }}
+        />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
       >
@@ -69,7 +79,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <TooltipProvider>{children}</TooltipProvider>
         </ThemeProvider>
       </body>
     </html>
