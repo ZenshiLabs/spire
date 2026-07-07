@@ -16,6 +16,7 @@ import {
     ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { CHANGE_META } from "@/lib/change-meta";
 import { copyText, downloadText } from "@/lib/file-actions";
 import { fetchFileContent } from "@/lib/session-api";
@@ -260,7 +261,7 @@ export function FileTree({
                     Waiting for files…
                 </div>
             ) : (
-                <div ref={parentRef} className="flex-1 overflow-auto">
+                <ScrollArea className="min-h-0 flex-1" viewportRef={parentRef}>
                     <div
                         className="relative w-full"
                         style={{ height: `${virtualizer.getTotalSize()}px` }}
@@ -300,7 +301,7 @@ export function FileTree({
                             );
                         })}
                     </div>
-                </div>
+                </ScrollArea>
             )}
         </div>
     );

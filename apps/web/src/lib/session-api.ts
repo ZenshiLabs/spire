@@ -1,6 +1,7 @@
 import type {
     Checkpoint,
     CheckpointSummary,
+    FileHistoryEntry,
     FileSnapshot,
     SessionResponse,
 } from "@spire/types";
@@ -88,6 +89,23 @@ export function fetchCheckpoint(
         `/api/sessions/${sessionId}/checkpoints/${seq}`,
         signal
     );
+}
+
+/**
+ * Fetches the revision history of a single file: every checkpoint that touched
+ * `path`, newest first. Used by the per-file timeline sheet in the editor.
+ */
+export async function fetchFileHistory(
+    sessionId: string,
+    path: string,
+    signal?: AbortSignal
+): Promise<FileHistoryEntry[]> {
+    const query = new URLSearchParams({ path });
+    const data = await getJson<{ history: FileHistoryEntry[] }>(
+        `/api/sessions/${sessionId}/file/history?${query.toString()}`,
+        signal
+    );
+    return data.history;
 }
 
 /**

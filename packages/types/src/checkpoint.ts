@@ -53,6 +53,25 @@ export const CheckpointSummarySchema = CheckpointSchema.omit({ changes: true });
 export type CheckpointSummary = z.infer<typeof CheckpointSummarySchema>;
 
 /**
+ * One revision of a single file: the checkpoint that touched it plus how it
+ * changed there. Returned newest-first by the per-file history endpoint and
+ * rendered in the viewer's per-file timeline, where a revision can be chosen
+ * as the baseline for the editor's diff mode.
+ */
+export const FileHistoryEntrySchema = z.object({
+    seq: z.number().int().nonnegative(),
+    label: z.string(),
+    createdAt: z.string(),
+    changeType: ChangeTypeSchema,
+    beforeHash: z.string().length(64).nullable(),
+    afterHash: z.string().length(64).nullable(),
+    additions: z.number().int().nonnegative(),
+    deletions: z.number().int().nonnegative(),
+    binary: z.boolean(),
+});
+export type FileHistoryEntry = z.infer<typeof FileHistoryEntrySchema>;
+
+/**
  * A single file entry in a checkpoint upload payload sent by the CLI.
  * The CLI provides only the new content and its hash; the server resolves the
  * prior version, computes diff stats, and writes the checkpoint atomically.

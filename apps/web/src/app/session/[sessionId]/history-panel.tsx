@@ -4,7 +4,7 @@ import { baseName, type CheckpointChange } from "@spire/types";
 import { useFileTreeStore } from "@spire/stores/file-tree-store";
 import { useHistoryStore } from "@spire/stores/history-store";
 import { ArrowUpIcon } from "lucide-react";
-import { memo, useCallback } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 
 import { FileTypeIcon } from "@/components/file-icon";
 import { Button } from "@/components/ui/button";
@@ -85,9 +85,37 @@ export function HistoryPanel({
     const selectedCheckpoint = useHistoryStore((state) =>
         state.selectedSeq !== null ? state.bySeq.get(state.selectedSeq) : undefined
     );
+    const [loadFailed, setLoadFailed] = useState(false);
+    const [retryNonce, setRetryNonce] = useState(0);
 
-    const onSelect = useCallback(
-        async (seq: number) => {
+    // Fetch the full checkpoint whenever the selected seq isn't cached. Selection
+    // can come from a row click or from the auto-select on opening the timeline
+    // view — the latter has no click handler to fetch for it, so the fetch must
+    // key off the selection itself or the change list never loads.
+    useEffect(() => {
+        if (selectedSeq === null || selectedCheckpoint) {
+            return;
+        }
+        setLoadFailed(false);
+        const controller = new AbortController();
+        fetchCheckpoint(sessionId, selectedSeq, controller.signal)
+            .then((checkpoint) => {
+                useHistoryStore.getState().cacheCheckpoint(checkpoint);
+                useFileTreeStore
+                    .getState()
+                    .setDecorations(decorationsFromChanges(checkpoint.changes));
+                onSelectChange(checkpoint.changes[0] ?? null);
+            })
+            .catch(() => {
+                if (!controller.signal.aborted) {
+                    setLoadFailed(true);
+                }
+            });
+        return () => controller.abort();
+    }, [sessionId, selectedSeq, selectedCheckpoint, onSelectChange, retryNonce]);
+
+    const handleSelect = useCallback(
+        (seq: number) => {
             const history = useHistoryStore.getState();
             if (history.selectedSeq === seq) {
                 history.selectSeq(null);
@@ -96,25 +124,18 @@ export function HistoryPanel({
                 return;
             }
             history.selectSeq(seq);
-            onSelectChange(null);
-            let checkpoint = history.bySeq.get(seq);
-            if (!checkpoint) {
-                try {
-                    checkpoint = await fetchCheckpoint(sessionId, seq);
-                    useHistoryStore.getState().cacheCheckpoint(checkpoint);
-                } catch {
-                    return;
-                }
-            }
-            useFileTreeStore.getState().setDecorations(decorationsFromChanges(checkpoint.changes));
-            if (checkpoint.changes.length > 0) {
-                onSelectChange(checkpoint.changes[0] ?? null);
+            const cached = history.bySeq.get(seq);
+            if (cached) {
+                useFileTreeStore
+                    .getState()
+                    .setDecorations(decorationsFromChanges(cached.changes));
+                onSelectChange(cached.changes[0] ?? null);
+            } else {
+                onSelectChange(null);
             }
         },
-        [sessionId, onSelectChange]
+        [onSelectChange]
     );
-
-    const handleSelect = useCallback((seq: number) => void onSelect(seq), [onSelect]);
 
     const jumpToLatest = () => {
         useHistoryStore.getState().selectSeq(null);
@@ -164,9 +185,25 @@ export function HistoryPanel({
                                     {selected && (
                                         <div className="border-t">
                                             {!selectedCheckpoint ? (
-                                                <div className="px-3 py-2">
-                                                    <Skeleton className="h-4 w-full" />
-                                                </div>
+                                                loadFailed ? (
+                                                    <div className="text-muted-foreground flex items-center gap-2 px-3 py-2 text-xs">
+                                                        Couldn&apos;t load changes.
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-5 px-1.5 text-xs"
+                                                            onClick={() =>
+                                                                setRetryNonce((nonce) => nonce + 1)
+                                                            }
+                                                        >
+                                                            Retry
+                                                        </Button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="px-3 py-2">
+                                                        <Skeleton className="h-4 w-full" />
+                                                    </div>
+                                                )
                                             ) : (
                                                 selectedCheckpoint.changes.map((change) => {
                                                     const meta = CHANGE_META[change.changeType];

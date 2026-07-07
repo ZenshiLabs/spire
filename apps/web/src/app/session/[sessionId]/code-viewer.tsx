@@ -1,6 +1,13 @@
 "use client";
 
-import { CopyIcon, DownloadIcon, SplitSquareHorizontalIcon, WrapTextIcon } from "lucide-react";
+import {
+  CopyIcon,
+  DownloadIcon,
+  HistoryIcon,
+  ListXIcon,
+  SplitSquareHorizontalIcon,
+  WrapTextIcon,
+} from "lucide-react";
 import { useMonaco } from "@monaco-editor/react";
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
@@ -8,12 +15,15 @@ import { useEffect, useRef, useState } from "react";
 import { CodeBreadcrumbs } from "@/components/code-breadcrumbs";
 import { languageForPath } from "@/components/monaco-viewer";
 import { Button } from "@/components/ui/button";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { copyText, downloadText } from "@/lib/file-actions";
 import { useFileContent } from "@/lib/use-file-content";
 import { useEditorStore } from "@spire/stores/editor-store";
 import { useFileTreeStore } from "@spire/stores/file-tree-store";
 import { Tab } from "./code-viewer-tab";
+import { FileHistorySheet, SESSION_START_REF } from "./file-history-sheet";
 
 const MonacoViewer = dynamic(
   () => import("@/components/monaco-viewer").then((m) => m.MonacoViewer),
@@ -30,13 +40,22 @@ export function CodeViewer({ sessionId }: { sessionId: string }) {
   const activeFilePath = useEditorStore((state) => state.activeFilePath);
   const setActiveFile = useEditorStore((state) => state.setActiveFile);
   const closeFile = useEditorStore((state) => state.closeFile);
+  const clearAll = useEditorStore((state) => state.clearAll);
   const setSelectedPath = useFileTreeStore((state) => state.setSelectedPath);
   const meta = useFileTreeStore((state) =>
     activeFilePath ? state.headMeta.get(activeFilePath) : undefined,
   );
 
   const [diffMode, setDiffMode] = useState(false);
+  const [diffBase, setDiffBase] = useState(SESSION_START_REF);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [wrap, setWrap] = useState(false);
+
+  // A revision picked in the history sheet belongs to one file's timeline;
+  // fall back to the session-start baseline when the active file changes.
+  useEffect(() => {
+    setDiffBase(SESSION_START_REF);
+  }, [activeFilePath]);
 
   /**
    * Dispose Monaco models for tabs that were closed since the last render.
@@ -64,7 +83,7 @@ export function CodeViewer({ sessionId }: { sessionId: string }) {
   const baseline = useFileContent(
     sessionId,
     diffMode && activeFilePath && !binary ? activeFilePath : null,
-    diffMode && !binary ? "0" : null,
+    diffMode && !binary ? diffBase : null,
   );
 
   const content = current.content ?? "";
@@ -80,38 +99,63 @@ export function CodeViewer({ sessionId }: { sessionId: string }) {
 
   const language = languageForPath(activeFilePath);
   const showDiff = diffMode && !binary && baseline.content !== null;
+  const diffBaseLabel =
+    diffBase === SESSION_START_REF ? "start" : `#${diffBase}`;
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between gap-2 border-b">
-        <div
-          className="flex items-center gap-1 overflow-x-auto px-2 py-1.5"
-          role="tablist"
-        >
-          {tabs.map((path) => (
-            <Tab
-              key={path}
-              path={path}
-              active={path === activeFilePath}
-              setActiveFile={setActiveFile}
-              setSelectedPath={setSelectedPath}
-              closeFile={closeFile}
-            />
-          ))}
-        </div>
+        <ScrollArea className="min-w-0 flex-1">
+          <div
+            className="flex w-max items-center gap-1 px-2 py-1.5"
+            role="tablist"
+          >
+            {tabs.map((path) => (
+              <Tab
+                key={path}
+                path={path}
+                active={path === activeFilePath}
+                setActiveFile={setActiveFile}
+                setSelectedPath={setSelectedPath}
+                closeFile={closeFile}
+              />
+            ))}
+          </div>
+          <ScrollBar orientation="horizontal" className="h-1.5" />
+        </ScrollArea>
         <div className="flex shrink-0 items-center gap-1 pr-2">
           <Button
-            variant={showDiff ? "secondary" : "ghost"}
+            variant={diffMode && !binary ? "secondary" : "ghost"}
             size="sm"
             className="h-7 gap-1.5 text-xs"
             disabled={binary}
-            aria-pressed={showDiff}
+            aria-pressed={diffMode && !binary}
             onClick={() => setDiffMode((v) => !v)}
-            title="Diff against the session's starting version"
+            title={
+              diffBase === SESSION_START_REF
+                ? "Diff against the session's starting version"
+                : `Diff against revision #${diffBase}`
+            }
           >
             <SplitSquareHorizontalIcon className="size-3.5" />
             Diff
+            {diffMode && !binary && (
+              <span className="text-muted-foreground font-mono text-[10px]">
+                vs {diffBaseLabel}
+              </span>
+            )}
           </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0"
+            aria-label="File timeline"
+            onClick={() => setHistoryOpen(true)}
+            title="File timeline — pick a revision to diff against"
+          >
+            <HistoryIcon className="size-3.5" />
+          </Button>
+          <Separator orientation="vertical" className="mx-0.5 !h-4" />
           <Button
             variant={wrap ? "secondary" : "ghost"}
             size="sm"
@@ -142,6 +186,20 @@ export function CodeViewer({ sessionId }: { sessionId: string }) {
           >
             <DownloadIcon className="size-3.5" />
           </Button>
+          <Separator orientation="vertical" className="mx-0.5 !h-4" />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0"
+            aria-label="Close all files"
+            onClick={() => {
+              clearAll();
+              setSelectedPath(null);
+            }}
+            title="Close all files"
+          >
+            <ListXIcon className="size-3.5" />
+          </Button>
         </div>
       </div>
 
@@ -168,7 +226,11 @@ export function CodeViewer({ sessionId }: { sessionId: string }) {
             <Skeleton className="size-full rounded-none" />
           ) : baseline.content === null ? (
             <div className="text-muted-foreground flex h-full items-center justify-center p-6 text-center text-sm">
-              No baseline — this file was added during the session.
+              No baseline — this file did not exist at{" "}
+              {diffBase === SESSION_START_REF
+                ? "the session start"
+                : `revision #${diffBase}`}
+              .
             </div>
           ) : (
             <MonacoDiffViewer
@@ -190,6 +252,19 @@ export function CodeViewer({ sessionId }: { sessionId: string }) {
         {!binary && <span>{lineCount} lines</span>}
         <span className="uppercase">{language}</span>
       </div>
+
+      <FileHistorySheet
+        sessionId={sessionId}
+        path={activeFilePath}
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        diffBase={diffMode && !binary ? diffBase : null}
+        onSelectBase={(ref) => {
+          setDiffBase(ref);
+          setDiffMode(true);
+          setHistoryOpen(false);
+        }}
+      />
     </div>
   );
 }

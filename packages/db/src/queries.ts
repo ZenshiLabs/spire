@@ -3,6 +3,7 @@ import type {
     CheckpointChange,
     CheckpointSummary,
     CreateSessionInput,
+    FileHistoryEntry,
     FileNode,
     FileSnapshot,
     SessionResponse,
@@ -508,6 +509,53 @@ export async function dbGetCheckpoint(
         ...toCheckpointSummary(row),
         changes: changeRows.map(toCheckpointChange),
     };
+}
+
+/**
+ * Returns every checkpoint that touched a single file path, newest first,
+ * joined with the checkpoint metadata needed to render a per-file timeline.
+ * Served by the checkpoint_changes_session_path_seq index.
+ */
+export async function dbGetFileHistory(
+    sessionId: string,
+    path: string,
+    opts: { limit?: number; beforeSeq?: number } = {}
+): Promise<FileHistoryEntry[]> {
+    const db = getDb();
+    const conditions = [
+        eq(checkpointChanges.sessionId, sessionId),
+        eq(checkpointChanges.path, path),
+    ];
+    if (opts.beforeSeq !== undefined) {
+        conditions.push(lt(checkpointChanges.checkpointSeq, opts.beforeSeq));
+    }
+    const rows = await db
+        .select({
+            seq: checkpointChanges.checkpointSeq,
+            label: checkpoints.label,
+            createdAt: checkpoints.createdAt,
+            changeType: checkpointChanges.changeType,
+            beforeHash: checkpointChanges.beforeHash,
+            afterHash: checkpointChanges.afterHash,
+            additions: checkpointChanges.additions,
+            deletions: checkpointChanges.deletions,
+            binary: checkpointChanges.binary,
+        })
+        .from(checkpointChanges)
+        .innerJoin(
+            checkpoints,
+            and(
+                eq(checkpoints.sessionId, checkpointChanges.sessionId),
+                eq(checkpoints.seq, checkpointChanges.checkpointSeq)
+            )
+        )
+        .where(and(...conditions))
+        .orderBy(desc(checkpointChanges.checkpointSeq))
+        .limit(opts.limit ?? 100);
+    return rows.map((row) => ({
+        ...row,
+        createdAt: row.createdAt.toISOString(),
+    }));
 }
 
 /**

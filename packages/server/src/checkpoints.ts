@@ -107,6 +107,13 @@ export const getCheckpoint = (
 ): Effect.Effect<Checkpoint | null, DbError> =>
     fromDb("getCheckpoint", () => DB.dbGetCheckpoint(sessionId, seq));
 
+export const getFileHistory = (
+    sessionId: string,
+    path: string,
+    opts?: { limit?: number; beforeSeq?: number }
+): Effect.Effect<Awaited<ReturnType<typeof DB.dbGetFileHistory>>, DbError> =>
+    fromDb("getFileHistory", () => DB.dbGetFileHistory(sessionId, path, opts));
+
 
 function countLines(text: string): number {
     return text.length === 0 ? 0 : text.split("\n").length;

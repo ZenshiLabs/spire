@@ -18,6 +18,7 @@ export { getFileContent } from "./files.js";
 export {
     getCheckpoints,
     getCheckpoint,
+    getFileHistory,
     buildSessionState,
     calculateCheckpointChanges,
     ingestSnapshot,

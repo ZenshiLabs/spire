@@ -6,7 +6,8 @@ import { useHistoryStore } from "@spire/stores/history-store";
 import { useSessionStore } from "@spire/stores/session-store";
 import { CheckIcon, LinkIcon, PanelLeftIcon, RotateCwIcon } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ImperativePanelHandle } from "react-resizable-panels";
 
 import { ActivityBar, type ActivityView } from "@/components/activity-bar";
 import { QuickOpen } from "@/components/quick-open";
@@ -116,7 +117,21 @@ export function SessionViewer({ sessionId }: { sessionId: string }) {
   const [selectedChange, setSelectedChange] = useState<CheckpointChange | null>(
     null,
   );
+  const sidebarRef = useRef<ImperativePanelHandle>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const activeFilePath = useEditorStore((state) => state.activeFilePath);
+
+  const toggleSidebar = useCallback(() => {
+    const panel = sidebarRef.current;
+    if (!panel) {
+      return;
+    }
+    if (panel.isCollapsed()) {
+      panel.expand();
+    } else {
+      panel.collapse();
+    }
+  }, []);
 
   // On mobile the tree/timeline live in a Sheet; opening a file should reveal
   // the editor, so close the Sheet whenever the active file changes.
@@ -137,37 +152,65 @@ export function SessionViewer({ sessionId }: { sessionId: string }) {
     setView("timeline");
   }, []);
 
-  const handleViewChange = useCallback((next: ActivityView) => {
-    setView(next);
-    // On mobile the panels live in a Sheet; surface it when the rail is used.
-    // Harmless on desktop, where the Sheet is not rendered.
-    setSheetOpen(true);
-    if (next === "timeline") {
-      const history = useHistoryStore.getState();
-      if (history.checkpoints.length > 0 && history.selectedSeq === null) {
-        const latest = history.checkpoints[0];
-        if (latest) {
-          history.selectSeq(latest.seq);
+  const handleViewChange = useCallback(
+    (next: ActivityView) => {
+      if (isMobile) {
+        // On mobile the panels live in a Sheet; surface it when the rail is used.
+        setView(next);
+        setSheetOpen(true);
+      } else if (next === view) {
+        // Re-clicking the active view toggles the sidebar, VS Code-style.
+        toggleSidebar();
+      } else {
+        setView(next);
+        sidebarRef.current?.expand();
+      }
+      if (next === "timeline") {
+        const history = useHistoryStore.getState();
+        if (history.checkpoints.length > 0 && history.selectedSeq === null) {
+          const latest = history.checkpoints[0];
+          if (latest) {
+            history.selectSeq(latest.seq);
+          }
         }
       }
-    }
-  }, []);
+    },
+    [isMobile, view, toggleSidebar],
+  );
 
   return (
     <div className="flex h-svh flex-col">
       <header className="flex items-center justify-between gap-4 border-b px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
-          {isMobile && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0"
-              onClick={() => setSheetOpen(true)}
-              aria-label="Open file explorer"
-            >
-              <PanelLeftIcon className="size-4" />
-            </Button>
-          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0"
+                onClick={() =>
+                  isMobile ? setSheetOpen(true) : toggleSidebar()
+                }
+                aria-label={
+                  isMobile
+                    ? "Open file explorer"
+                    : sidebarCollapsed
+                      ? "Show sidebar"
+                      : "Hide sidebar"
+                }
+                aria-pressed={!isMobile && !sidebarCollapsed}
+              >
+                <PanelLeftIcon className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {isMobile
+                ? "Open file explorer"
+                : sidebarCollapsed
+                  ? "Show sidebar"
+                  : "Hide sidebar"}
+            </TooltipContent>
+          </Tooltip>
           <div className="flex min-w-0 flex-col">
             <span className="truncate text-sm font-semibold">{title}</span>
             {description && (
@@ -285,13 +328,20 @@ export function SessionViewer({ sessionId }: { sessionId: string }) {
 
         return (
           <div className="flex min-h-0 flex-1">
-            <ActivityBar view={view} onChange={handleViewChange} />
+            {!sidebarCollapsed && (
+              <ActivityBar view={view} onChange={handleViewChange} />
+            )}
             <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1">
               <ResizablePanel
+                ref={sidebarRef}
                 defaultSize={22}
                 minSize={14}
                 maxSize={40}
-                className="bg-sidebar text-sidebar-foreground"
+                collapsible
+                collapsedSize={0}
+                onCollapse={() => setSidebarCollapsed(true)}
+                onExpand={() => setSidebarCollapsed(false)}
+                className="bg-sidebar text-sidebar-foreground min-w-0"
               >
                 {sidePanel}
               </ResizablePanel>
