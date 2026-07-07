@@ -14,12 +14,14 @@ import { useEffect, useRef, useState } from "react";
 
 import { CodeBreadcrumbs } from "@/components/code-breadcrumbs";
 import { languageForPath } from "@/components/monaco-viewer";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { copyText, downloadText } from "@/lib/file-actions";
 import { useFileContent } from "@/lib/use-file-content";
+import { useFileRevisionCount } from "@/lib/use-file-revision-count";
 import { useEditorStore } from "@spire/stores/editor-store";
 import { useFileTreeStore } from "@spire/stores/file-tree-store";
 import { Tab } from "./code-viewer-tab";
@@ -78,6 +80,11 @@ export function CodeViewer({ sessionId }: { sessionId: string }) {
   }, [monaco, tabs]);
 
   const binary = Boolean(meta?.binary);
+  const revisionCount = useFileRevisionCount(
+    sessionId,
+    activeFilePath,
+    meta?.hash ?? null,
+  );
   const ref = meta?.hash ?? (activeFilePath ? "latest" : null);
   const current = useFileContent(sessionId, activeFilePath, ref, { binary });
   const baseline = useFileContent(
@@ -148,12 +155,25 @@ export function CodeViewer({ sessionId }: { sessionId: string }) {
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 w-7 p-0"
-            aria-label="File timeline"
+            className="relative h-7 w-7 p-0"
+            aria-label={
+              revisionCount !== null && revisionCount > 0
+                ? `File timeline (${revisionCount} revision${revisionCount === 1 ? "" : "s"})`
+                : "File timeline"
+            }
             onClick={() => setHistoryOpen(true)}
             title="File timeline — pick a revision to diff against"
           >
             <HistoryIcon className="size-3.5" />
+            {revisionCount !== null && revisionCount > 0 && (
+              <Badge
+                variant="destructive"
+                className="absolute -top-1 -right-1 h-3.5 min-w-3.5 rounded-full px-1 text-[9px]"
+                aria-hidden="true"
+              >
+                {revisionCount > 99 ? "99+" : revisionCount}
+              </Badge>
+            )}
           </Button>
           <Separator orientation="vertical" className="mx-0.5 !h-4" />
           <Button
