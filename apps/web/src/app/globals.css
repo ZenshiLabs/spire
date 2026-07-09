@@ -5,14 +5,12 @@
 
 :root {
   --radius: 0.625rem;
-  --spire-accent: #2d5bff;
-  --spire-accent-foreground: #ffffff;
-  /* Terminal / broadcast-preview palette — always dark regardless of theme */
-  --terminal: #0d1014;
+  /* Every colour in this file is OKLCH. No hex, no rgb(). */
+  --spire-accent: oklch(0.5513 0.2473 265.85);
+  --spire-accent-foreground: oklch(1 0 0);
+  /* Terminal surface: always dark, regardless of theme. */
+  --terminal: oklch(0.1716 0.0097 255.65);
   --terminal-foreground: oklch(0.91 0 0);
-  --macos-close: #ff5f57;
-  --macos-minimize: #febc2e;
-  --macos-maximize: #28c840;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -47,7 +45,7 @@
 }
 
 .dark {
-  --spire-accent: #4f78ff;
+  --spire-accent: oklch(0.6173 0.2057 267.32);
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -123,9 +121,6 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --color-terminal: var(--terminal);
   --color-terminal-foreground: var(--terminal-foreground);
-  --color-macos-close: var(--macos-close);
-  --color-macos-minimize: var(--macos-minimize);
-  --color-macos-maximize: var(--macos-maximize);
 }
 
 @layer base {
@@ -135,9 +130,17 @@
   body {
     @apply bg-background text-foreground;
   }
+  /*
+   * Fragment links glide instead of teleporting, and land clear of the sticky
+   * nav. `scroll-padding-top` is the global rule, so no section has to remember
+   * a `scroll-mt-*` of its own.
+   */
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 5.5rem;
+  }
 }
 
-/* ---- Landing page: brand grid, glow, live caret, entrance motion ---- */
 @layer utilities {
   /* Faint blueprint grid that fades out at the edges. */
   .spire-grid {
@@ -155,12 +158,42 @@
     background-size: 46px 46px;
     -webkit-mask-image: radial-gradient(
       ellipse 75% 60% at 50% 0%,
-      #000 35%,
+      oklch(0 0 0) 35%,
       transparent 100%
     );
     mask-image: radial-gradient(
       ellipse 75% 60% at 50% 0%,
-      #000 35%,
+      oklch(0 0 0) 35%,
+      transparent 100%
+    );
+  }
+
+  /*
+   * Hero variant: a full-bleed field that carries edge to edge and fades only
+   * near the bottom, so the grid reads as the page's ground rather than a boxed
+   * decoration. Lines run a touch stronger than the shared grid. Defined after
+   * `.spire-grid` so, at equal specificity, these overrides win.
+   */
+  .spire-grid-hero {
+    background-image:
+      linear-gradient(
+        to right,
+        color-mix(in oklab, var(--foreground) 9%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in oklab, var(--foreground) 9%, transparent) 1px,
+        transparent 1px
+      );
+    -webkit-mask-image: radial-gradient(
+      125% 100% at 50% 0%,
+      oklch(0 0 0) 58%,
+      transparent 100%
+    );
+    mask-image: radial-gradient(
+      125% 100% at 50% 0%,
+      oklch(0 0 0) 58%,
       transparent 100%
     );
   }
@@ -189,6 +222,50 @@
   .spire-rise {
     animation: spire-rise 0.75s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
+
+  /*
+   * Scroll-entry primitive. The element parks in a settled-but-absent state
+   * and resolves once an IntersectionObserver flips `data-revealed`. Stagger a
+   * group by setting `--reveal-delay` per child. Only `opacity`, `transform`
+   * and `filter` are touched, so this never triggers layout.
+   */
+  .spire-reveal {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0);
+    filter: blur(4px);
+    transition:
+      opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+      transform 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+      filter 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+    transition-delay: var(--reveal-delay, 0ms);
+  }
+
+  .spire-reveal[data-revealed="true"] {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+
+  /*
+   * Film grain. Fixed and pointer-events-none so it never repaints with the
+   * scrolling content. Sits above sections, below the sticky nav.
+   */
+  .spire-grain {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    opacity: 0.028;
+  }
+
+  .dark .spire-grain {
+    opacity: 0.045;
+  }
+}
+
+@media (scripting: none) {
+  .spire-reveal {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
 }
 
 @keyframes spire-caret {
@@ -214,6 +291,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
   .spire-rise {
     animation: none;
   }
@@ -221,4 +301,30 @@
     animation: none;
     opacity: 1;
   }
+  /* Reveals resolve instantly: the content is the point, the entrance is not. */
+  .spire-reveal {
+    opacity: 1;
+    transform: none;
+    filter: none;
+    transition: none;
+  }
+}
+
+/*
+ * Theme toggle. The default view-transition crossfades the two root snapshots;
+ * we drive our own circular clip instead (see `ModeToggle`), so silence the
+ * built-in animation and paint the incoming theme on top of the outgoing one.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  z-index: 2;
 }

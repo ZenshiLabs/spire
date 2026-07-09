@@ -34,6 +34,31 @@ export const MONACO_OPTIONS = {
  */
 let shikiRegistered = false;
 
+/**
+ * Monaco measures glyph widths once, when the editor is created. On a cold load
+ * the monospace web font (`--font-geist-mono`) usually has not arrived yet, so
+ * Monaco caches metrics for the fallback font — or zero-width metrics — and
+ * paints an empty view. The text only appeared after the first interaction,
+ * because that forced a re-render with the (by then loaded) real font. Waiting
+ * on `document.fonts.ready` and calling `remeasureFonts()` fixes it at the
+ * source: re-measure the moment the real font is available, then relayout.
+ */
+function remeasureOnFontLoad(
+  editor: { layout: () => void },
+  monaco: typeof Monaco,
+) {
+  const apply = () => {
+    monaco.editor.remeasureFonts();
+    editor.layout();
+  };
+  const fonts = typeof document !== "undefined" ? document.fonts : undefined;
+  if (!fonts || fonts.status === "loaded") {
+    apply();
+    return;
+  }
+  void fonts.ready.then(apply);
+}
+
 function isMonacoCancelation(reason: unknown): boolean {
   return (
     reason !== null &&
@@ -128,6 +153,9 @@ export function MonacoViewer({
       theme={theme}
       loading={<Skeleton className="size-full rounded-none" />}
       options={{ ...MONACO_OPTIONS, wordWrap }}
+      onMount={(editor, monacoInstance) =>
+        remeasureOnFontLoad(editor, monacoInstance)
+      }
     />
   );
 }
@@ -181,8 +209,9 @@ export function MonacoDiffViewer({
         originalEditable: false,
         wordWrap,
       }}
-      onMount={(editor) => {
+      onMount={(editor, monacoInstance) => {
         editorRef.current = editor;
+        remeasureOnFontLoad(editor, monacoInstance);
       }}
     />
   );

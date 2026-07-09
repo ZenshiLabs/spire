@@ -108,7 +108,19 @@ import { CodeViewer } from "./code-viewer";
 import { FileTree } from "./file-tree";
 import { HistoryPanel } from "./history-panel";
 
-export function SessionViewer({ sessionId }: { sessionId: string }) {
+/**
+ * `embed` renders the viewer for an `<iframe>` on the landing page: the
+ * "session ended" notice is suppressed, because the surrounding page already
+ * says what this is and its "Back home" link would strand the reader inside a
+ * frame. Nothing else changes, so the preview is the real viewer.
+ */
+export function SessionViewer({
+  sessionId,
+  embed = false,
+}: {
+  sessionId: string;
+  embed?: boolean;
+}) {
   const { status, error, retry } = useSessionStream(sessionId);
   const session = useSessionStore((state) => state.session);
   const isMobile = useIsMobile();
@@ -242,10 +254,10 @@ export function SessionViewer({ sessionId }: { sessionId: string }) {
         </div>
       </header>
 
-      {status === "ended" && (
+      {status === "ended" && !embed && (
         <Alert className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-none border-x-0 border-t-0 py-1.5 text-center text-xs">
           <AlertDescription>
-            This session has ended — you&apos;re viewing its final state.
+            This session has ended, so you&apos;re viewing its final state.
           </AlertDescription>
           <span className="flex items-center gap-2">
             <Button asChild size="sm" variant="default" className="h-6 px-2 text-xs">

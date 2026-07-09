@@ -16,15 +16,15 @@ const geistMono = Geist_Mono({
 });
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-const title = "Spire — Live code sharing without a screen share";
+const title = "Spire: live code sharing without a screen share";
 const description =
-  "Broadcast the files you're working on to a browser tab. Run one command, share the link, and anyone can follow along as you save — read-only, syntax-highlighted, no account or install.";
+  "Broadcast the files you're working on to a browser tab. Run one command, share the link, and anyone can follow along as you save. Read-only, syntax-highlighted, no account or install.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
     default: title,
-    template: "%s — Spire",
+    template: "%s · Spire",
   },
   description,
   applicationName: "Spire",
@@ -60,7 +60,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" data-scroll-behavior="smooth" suppressHydrationWarning>
       <head>
         {/* Suppress Monaco language-service cancelation rejections before the
             Next.js dev overlay installs its unhandledrejection handler. */}

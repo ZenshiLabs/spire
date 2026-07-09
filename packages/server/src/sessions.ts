@@ -102,17 +102,21 @@ export type CleanupResult = { ended: number; deleted: number };
  * (their CLI died without a clean shutdown), then deletes ended sessions past
  * the retention window. FK cascades reclaim all child rows. `idleCutoff` and
  * `expiryCutoff` are absolute timestamps computed by the caller.
+ *
+ * `protectedIds` survive the expiry pass forever. They are still eligible to be
+ * marked ended, because an abandoned demo session is still abandoned.
  */
 export const cleanupSessions = (
     idleCutoff: Date,
-    expiryCutoff: Date
+    expiryCutoff: Date,
+    protectedIds: readonly string[] = []
 ): Effect.Effect<CleanupResult, DbError> =>
     Effect.gen(function* () {
         const ended = yield* fromDb("markAbandonedSessions", () =>
             DB.dbMarkAbandonedSessions(idleCutoff)
         );
         const deleted = yield* fromDb("deleteExpiredSessions", () =>
-            DB.dbDeleteExpiredSessions(expiryCutoff)
+            DB.dbDeleteExpiredSessions(expiryCutoff, protectedIds)
         );
         return { ended, deleted };
     });

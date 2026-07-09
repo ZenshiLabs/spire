@@ -1,6 +1,7 @@
 import { cleanupSessions } from "@spire/server";
 import { failure, routeHandler, success } from "@/server/http";
 import { run } from "@/server/runtime";
+import { PROTECTED_SESSION_IDS } from "@/lib/demo-session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +31,8 @@ export const GET = routeHandler(async (request: Request) => {
     const idleCutoff = new Date(now - ABANDON_AFTER_MS);
     const expiryCutoff = new Date(now - RETENTION_DAYS * 24 * 60 * 60 * 1000);
 
-    const result = await run(cleanupSessions(idleCutoff, expiryCutoff));
+    const result = await run(
+        cleanupSessions(idleCutoff, expiryCutoff, PROTECTED_SESSION_IDS)
+    );
     return success(result);
 });

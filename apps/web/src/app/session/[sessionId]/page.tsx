@@ -20,9 +20,13 @@ export async function generateMetadata({
 
 export default async function SessionPage({
     params,
+    searchParams,
 }: {
     params: Promise<{ sessionId: string }>;
+    searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
     const { sessionId } = await params;
-    return <SessionViewer sessionId={sessionId} />;
+    const { embed } = await searchParams;
+
+    return <SessionViewer sessionId={sessionId} embed={embed === "1"} />;
 }

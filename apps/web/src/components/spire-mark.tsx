@@ -28,12 +28,12 @@ type SpireMarkProps = Omit<SVGProps<SVGSVGElement>, "title"> & {
 export function SpireMark({
   size = 24,
   filled = false,
-  accentColor = "var(--spire-accent, #2d5bff)",
-  tileColor = "var(--spire-tile, #0e1116)",
+  accentColor = "var(--spire-accent, oklch(0.5513 0.2473 265.85))",
+  tileColor = "var(--spire-tile, oklch(0.1767 0.0114 260.64))",
   title,
   ...props
 }: SpireMarkProps) {
-  const base = filled ? "#ffffff" : "currentColor";
+  const base = filled ? "oklch(1 0 0)" : "currentColor";
 
   return (
     <svg

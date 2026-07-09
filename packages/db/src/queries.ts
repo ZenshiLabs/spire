@@ -9,7 +9,7 @@ import type {
     SessionResponse,
 } from "@spire/types";
 import { HASH_RE } from "@spire/types";
-import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, notInArray, sql } from "drizzle-orm";
 
 import { getDb } from "./client.js";
 import { compressBlob, decompressBlob } from "./compression.js";
@@ -148,9 +148,16 @@ export async function dbMarkAbandonedSessions(idleCutoff: Date): Promise<number>
  * stay within serverless function time limits. FK cascades prune the session's
  * snapshots, blobs, checkpoints, changes, and head files. Returns the total
  * number of sessions removed.
+ *
+ * `protectedIds` are never deleted regardless of age. The landing page embeds a
+ * finished session as its live preview, and that session must outlive the
+ * retention window. Excluding them inside the subquery keeps the batch loop
+ * terminating: a protected row can never be selected, so it can never stall a
+ * batch that returns fewer rows than `batchSize`.
  */
 export async function dbDeleteExpiredSessions(
     expiryCutoff: Date,
+    protectedIds: readonly string[] = [],
     batchSize = 200
 ): Promise<number> {
     const db = getDb();
@@ -167,7 +174,10 @@ export async function dbDeleteExpiredSessions(
                         .where(
                             and(
                                 eq(sessions.status, "ended"),
-                                lt(sessions.endedAt, expiryCutoff)
+                                lt(sessions.endedAt, expiryCutoff),
+                                protectedIds.length > 0
+                                    ? notInArray(sessions.id, [...protectedIds])
+                                    : undefined
                             )
                         )
                         .limit(batchSize)

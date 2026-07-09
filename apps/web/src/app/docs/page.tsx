@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import { CopyCommand } from "@/components/landing/copy-command";
-import { SpireMark } from "@/components/spire-mark";
+import { Code } from "@/components/landing/primitives";
+import { SiteFooter, SiteHeader } from "@/components/landing/site-chrome";
 
 export const metadata: Metadata = {
   title: "Documentation",
@@ -23,10 +25,10 @@ function Section({
 }: {
   id: string;
   title: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
-    <section id={id} className="scroll-mt-24">
+    <section id={id} className="scroll-mt-28">
       <h2 className="mb-4 text-2xl font-semibold tracking-tight">{title}</h2>
       <div className="text-muted-foreground space-y-4 text-sm leading-relaxed">
         {children}
@@ -36,41 +38,30 @@ function Section({
 }
 
 function Command({ children }: { children: string }) {
-  return <CopyCommand command={children} className="my-2 max-w-full" />;
+  return <CopyCommand command={children} className="my-3 max-w-full" />;
 }
 
-function Code({ children }: { children: React.ReactNode }) {
+function Snippet({ children }: { children: string }) {
   return (
-    <code className="bg-muted rounded px-1.5 py-0.5 font-mono text-[0.85em]">
+    <pre className="border-border/70 bg-muted/50 overflow-x-auto rounded-2xl border p-5 font-mono text-xs leading-relaxed">
       {children}
-    </code>
+    </pre>
   );
 }
 
 export default function DocsPage() {
   return (
-    <div className="mx-auto min-h-svh max-w-5xl px-6 py-10">
-      <header className="mb-10 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2 font-semibold">
-          <SpireMark size={24} />
-          Spire
-        </Link>
-        <Link
-          href="/"
-          className="text-muted-foreground hover:text-foreground text-sm"
-        >
-          Home
-        </Link>
-      </header>
+    <div className="relative">
+      <SiteHeader />
 
-      <div className="grid gap-10 md:grid-cols-[200px_1fr]">
+      <div className="mx-auto grid max-w-5xl gap-12 px-6 pt-16 pb-24 md:grid-cols-[180px_1fr]">
         <nav className="hidden md:block">
-          <ul className="sticky top-10 space-y-2 text-sm">
+          <ul className="sticky top-28 space-y-2 text-sm">
             {NAV.map((item) => (
               <li key={item.href}>
                 <a
                   href={item.href}
-                  className="text-muted-foreground hover:text-foreground"
+                  className="text-muted-foreground hover:text-foreground transition-colors"
                 >
                   {item.label}
                 </a>
@@ -79,22 +70,22 @@ export default function DocsPage() {
           </ul>
         </nav>
 
-        <main className="space-y-12">
+        <main className="space-y-14">
           <div>
-            <h1 className="mb-2 text-3xl font-bold tracking-tight">
+            <h1 className="text-[clamp(2rem,4vw,2.75rem)] leading-[1.1] font-semibold tracking-[-0.03em]">
               Documentation
             </h1>
-            <p className="text-muted-foreground">
+            <p className="text-muted-foreground mt-4 max-w-[58ch] leading-relaxed">
               Spire broadcasts a local directory so anyone with the link can
-              watch your files change live — no accounts, no install for
-              viewers.
+              watch your files change live. No accounts, and nothing for viewers
+              to install.
             </p>
           </div>
 
           <Section id="getting-started" title="Getting started">
             <p>
               From the directory you want to share, run one command. The CLI
-              downloads on first use — nothing to install globally.
+              downloads on first use, so there is nothing to install globally.
             </p>
             <Command>npx @zenshilabs/spire start</Command>
             <p>
@@ -106,7 +97,8 @@ export default function DocsPage() {
               Press <Code>Ctrl+C</Code> to stop. Re-running{" "}
               <Code>spire start</Code> in the same directory resumes the{" "}
               <em>same</em> URL, so a link you shared keeps working across
-              restarts.
+              restarts. Only the files that changed while you were away are
+              re-uploaded.
             </p>
           </Section>
 
@@ -120,37 +112,42 @@ export default function DocsPage() {
             <Command>npx @zenshilabs/spire start ./backend ./frontend</Command>
             <ul className="list-disc space-y-1 pl-5">
               <li>
-                <Code>--title &lt;text&gt;</Code> — set the session title (single
+                <Code>--title &lt;text&gt;</Code> sets the session title (single
                 directory only).
               </li>
               <li>
-                <Code>--session &lt;id&gt;</Code> — resume a specific session id
+                <Code>--session &lt;id&gt;</Code> resumes a specific session id
                 (single directory only).
               </li>
               <li>
-                <Code>--dir &lt;path&gt;</Code> — legacy alias for a positional
-                directory.
+                <Code>--dir &lt;path&gt;</Code> is an alias for a positional
+                directory, and may be repeated.
               </li>
             </ul>
 
             <h3 className="text-foreground pt-2 font-medium">spire list</h3>
             <p>
-              List every known session and whether its broadcast process is
-              still live.
+              List every known session and whether its broadcast process is still
+              live.
             </p>
 
             <h3 className="text-foreground pt-2 font-medium">spire status</h3>
             <p>
-              Show details for the current directory&apos;s session, or a
-              summary of all sessions when the current directory has none.
+              Show details for the current directory&apos;s session, or a summary
+              of all sessions when the current directory has none.
             </p>
 
             <h3 className="text-foreground pt-2 font-medium">spire stop</h3>
             <p>
               Stop the current directory&apos;s session. Use{" "}
-              <Code>--dir &lt;path&gt;</Code> to target another directory or{" "}
+              <Code>--dir &lt;path&gt;</Code> to target another directory, or{" "}
               <Code>--all</Code> to stop every session. Live broadcasts flush a
               final checkpoint before ending.
+            </p>
+            <p>
+              Running <Code>spire</Code> with no command opens an interactive
+              picker. There is no <Code>--help</Code> or <Code>--version</Code>{" "}
+              flag.
             </p>
 
             <h3 className="text-foreground pt-4 font-medium">
@@ -159,31 +156,45 @@ export default function DocsPage() {
             <p>
               Drop a <Code>spire.json</Code> in a directory to broadcast a fixed
               set of projects with a bare <Code>spire start</Code>. Sessions
-              started this way share a workspace id.
+              started this way share a workspace id, which the CLI generates and
+              writes back to the file on first run.
             </p>
-            <pre className="bg-muted overflow-x-auto rounded-lg p-4 font-mono text-xs">
-              {`{
+            <Snippet>{`{
   "title": "My App",
   "projects": [
     { "dir": "./backend", "title": "Backend" },
     { "dir": "./frontend", "title": "Frontend" }
   ]
-}`}
-            </pre>
+}`}</Snippet>
+
+            <h3 className="text-foreground pt-4 font-medium">
+              What gets watched
+            </h3>
+            <p>
+              Spire reads the <Code>.gitignore</Code> at the root of the
+              directory, and always ignores <Code>node_modules</Code>,{" "}
+              <Code>.git</Code>, and every <Code>.env</Code> file regardless of
+              what it says. Build output directories appear in the tree but their
+              contents are never watched or uploaded. Binary files are listed with
+              their size and hash, but their bytes stay on your machine, and no
+              file over 2 MB is read.
+            </p>
 
             <h3 className="text-foreground pt-4 font-medium">Environment</h3>
             <ul className="list-disc space-y-1 pl-5">
               <li>
-                <Code>SPIRE_API_URL</Code> — the server to broadcast to
-                (defaults to <Code>http://localhost:3000</Code>).
+                <Code>SPIRE_API_URL</Code> is the server to broadcast to. Defaults
+                to <Code>http://localhost:3000</Code>, so point it at your
+                instance to share links outside your machine.
               </li>
               <li>
-                <Code>SPIRE_HEARTBEAT_MS</Code> — liveness ping interval
+                <Code>SPIRE_HEARTBEAT_MS</Code> is the liveness ping interval
                 (default 10000).
               </li>
               <li>
-                <Code>SPIRE_IDLE_MS</Code> / <Code>SPIRE_MAX_WAIT_MS</Code> /{" "}
-                <Code>SPIRE_STABILITY_MS</Code> — save-burst batching timing.
+                <Code>SPIRE_IDLE_MS</Code>, <Code>SPIRE_MAX_WAIT_MS</Code>, and{" "}
+                <Code>SPIRE_STABILITY_MS</Code> tune save-burst batching (defaults
+                120, 1000, and 75 milliseconds).
               </li>
             </ul>
           </Section>
@@ -196,20 +207,20 @@ export default function DocsPage() {
             </p>
             <ul className="list-disc space-y-1 pl-5">
               <li>
-                <Code>DATABASE_URL</Code> — Postgres connection string (a Neon
+                <Code>DATABASE_URL</Code> is a Postgres connection string (a Neon
                 database works out of the box).
               </li>
               <li>
-                <Code>REDIS_URL</Code> — optional; enables cross-instance
+                <Code>REDIS_URL</Code> is optional. It enables cross-instance
                 pub/sub, caching, and sequence counters. Without it the server
                 runs single-instance in-process.
               </li>
               <li>
-                <Code>CRON_SECRET</Code> — bearer token protecting the retention
-                cleanup endpoint.
+                <Code>CRON_SECRET</Code> is a bearer token protecting the
+                retention cleanup endpoint.
               </li>
               <li>
-                <Code>SPIRE_RETENTION_DAYS</Code> — how long ended sessions are
+                <Code>SPIRE_RETENTION_DAYS</Code> is how long ended sessions are
                 kept before deletion (default 30).
               </li>
             </ul>
@@ -218,19 +229,22 @@ export default function DocsPage() {
               <Code>/api/cron/cleanup</Code>. On Vercel this is wired through{" "}
               <Code>vercel.json</Code>; elsewhere, hit it on a schedule:
             </p>
-            <pre className="bg-muted overflow-x-auto rounded-lg p-4 font-mono text-xs">
-              {`curl -H "Authorization: Bearer $CRON_SECRET" \\
-  https://your-instance/api/cron/cleanup`}
-            </pre>
+            <Snippet>{`curl -H "Authorization: Bearer $CRON_SECRET" \\
+  https://your-instance/api/cron/cleanup`}</Snippet>
           </Section>
 
-          <footer className="text-muted-foreground border-t pt-6 text-sm">
-            <Link href="/" className="hover:text-foreground">
-              ← Back to home
+          <div className="border-border/70 border-t pt-8">
+            <Link
+              href="/"
+              className="text-muted-foreground hover:text-foreground text-sm transition-colors"
+            >
+              Back to home
             </Link>
-          </footer>
+          </div>
         </main>
       </div>
+
+      <SiteFooter />
     </div>
   );
 }
